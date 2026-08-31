@@ -10,7 +10,7 @@ PID_DIR="$BASE/runtime/pids"
 
 # 顺序即启动顺序（依赖方在后），停止时按逆序处理
 SERVICES=(
-  "kvstore|5160|$BASE|./kvstore/kvstore configs/kvstore-ai.conf"
+  "kvstore|5160|$BASE|./kvstore/kvstore/kvstore configs/kvstore-ai.conf"
   "tokenizer|3002|$BASE/tokenizer|nuxt --port 3002 --module tokenizer.py --workers 2"
   "sensitive|50053|$BASE/keywords-filter|$BASE/bin/keywords-filter --config=dev.config.yaml --dict=dict.txt"
   "keyword|50054|$BASE/keywords-filter|$BASE/bin/keywords-filter --config=dev.kw.config.yaml --dict=keyword-dict.txt"
