@@ -37,7 +37,7 @@ dependOn:
 redis:
   host: "127.0.0.1"
   port: 5160
-  pwd: "123456"
+  pwd: ""
 mysql:
   dsn: "root:123456@tcp(127.0.0.1:3306)/ai_chat?charset=utf8mb4"
   maxOpenConn: 10

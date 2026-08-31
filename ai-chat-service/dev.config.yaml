@@ -39,7 +39,7 @@ chat:
 redis:
   host: "127.0.0.1"
   port: 5160
-  pwd: "123456"
+  pwd: ""
 mysql:
   dsn: "root:123456@tcp(127.0.0.1:3306)/ai_chat?collation=utf8mb4_unicode_ci&charset=utf8mb4"
   maxLifeTime: 3600

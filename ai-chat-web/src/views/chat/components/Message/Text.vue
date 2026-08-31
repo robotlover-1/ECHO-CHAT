@@ -73,7 +73,6 @@ defineExpose({ textRef })
         <div v-if="!inversion">
           <div v-if="!asRawText" class="markdown-body" v-html="text" />
           <div v-else class="whitespace-pre-wrap" v-text="text" />
-          <p style="color:#6e7781;font-size:12px;">由零声教学AI助手生成</p>
         </div>
         <div v-else class="whitespace-pre-wrap" v-text="text" />
       </div>

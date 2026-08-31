@@ -42,9 +42,21 @@ const dataSources = computed(() => chatStore.getChatByUuid(+uuid))
 const conversationList = computed(() => dataSources.value.filter(item => (!item.inversion && !item.error)))
 
 // 会话级 tokens 统计：总消耗（LLM 回答）与节省（缓存命中）
+// 节省按「不同回答」去重（同一回答被缓存多次命中只记一次），并封顶不超过总消耗，
+// 避免"节省 > 消耗"的直觉冲突
 const tokenStats = computed(() => {
   const consumed = dataSources.value.reduce((s, m) => s + (m.tokensUsed ?? 0), 0)
-  const saved = dataSources.value.reduce((s, m) => s + (m.tokensSaved ?? 0), 0)
+  const seenAnswers = new Set<string>()
+  const savedRaw = dataSources.value.reduce((s, m) => {
+    if (m.tokensSaved && m.source === 'cache') {
+      if (seenAnswers.has(m.text))
+        return s
+      seenAnswers.add(m.text)
+      return s + m.tokensSaved
+    }
+    return s
+  }, 0)
+  const saved = Math.min(savedRaw, consumed)
   return { consumed, saved }
 })
 
