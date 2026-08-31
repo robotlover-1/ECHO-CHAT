@@ -1,0 +1,72 @@
+server:
+  ip: 0.0.0.0
+  port: 50051
+  accessToken: "me256487ang1chubdpdialoud22sev1ozhoguumyqca"
+log:
+  # panic,fatal,error,warn,warning,info,debug,trace
+  level: "info"
+  logPath: "runtime/logs/app.log"
+chat:
+  # openai key
+  api_key: "i0jey84SdkFdw5u43780yjr3h7se8nth0yi295nr94ksDngKprEh"
+  # openai 接口地址
+  base_url: "http://localhost:8084/v1"
+  # 使用的训练模型
+  model: "gpt-3.5-turbo"
+  # 单次请求的上下文总长度,包括：请求消息+响应消息
+  max_tokens: 4096
+  # 表示语言模型输出的随机性和创造性
+  # 取值范围 0 ~ 1，值越大随机性越高
+  temperature: 0.8
+  # 用于生成文本时控制选词的随机程度
+  # 即下一个预测单词考虑的概率范围
+  # 取值范围0 ~ 1
+  top_p: 0.9
+  # 存在惩罚，用于生成文本时控制重复使用单词的程度
+  # 取值范围 0 ~ 1 ，0表示不惩罚，1表示禁止重复
+  presence_penalty: 0.8
+  # 用于控制模型生成回复时重复单词出现的频率
+  # 取值范围 0~1，值越大表示回复时会更注重避免使用已经出现的单词
+  frequency_penalty: 0.5
+  # AI助手特征描述
+  bot_desc: "你是一个AI助手，我需要你模拟一名资深的软件工程师来回答我的问题"
+  # 单次请求，保留的响应tokens数量
+  min_response_tokens: 2048
+  # 上下文缓存时长，单位s
+  context_ttl: 1800
+  # 上下文消息条数
+  context_len: 4
+redis:
+  host: "192.168.239.161"
+  port: 6379
+  pwd: "123456"
+mysql:
+  dsn: "root:123456@tcp(192.168.239.161:3306)/ai_chat?collation=utf8mb4_unicode_ci&charset=utf8mb4"
+  maxLifeTime: 3600
+  maxOpenConn: 10
+  maxIdleConn: 10
+dependOn:
+  sensitive:
+    address: "sensitive:50051"
+    accessToken: "ang1chubdev1ozhome256487d22sapguuv1ozhom"
+  keywords:
+    address: "keywords:50051"
+    accessToken: "ang1chubdev1ozhome256487d22sapguuv1ozhom"
+  tokenizer:
+    address: "http://tokenizer:3002"
+vectorDB:
+  # 访问地址
+  url: "http://lb-4u4r1fk4-1ys6gv3rpmdan420.clb.ap-guangzhou.tencentclb.com:60000"
+  # 用户名
+  username: "root"
+  # 密码
+  pwd: "YaUfVueWZJ20e4ghyLlBT8Dou5OapwpFTUq50oft"
+  database: "ai-chat"
+  # 请求超时时长s
+  timeout: 5
+  # 最大空闲连接数
+  maxIdleConnPerHost: 2
+  # 读一致性： strongConsistency(强一致性)，eventualConsistency(最终一致性)
+  readConsistency: "eventualConsistency"
+  # 空闲连接超时时长s
+  idleConnTimeout: 60

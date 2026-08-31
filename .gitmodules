@@ -1,0 +1,3 @@
+[submodule "kvstore"]
+	path = kvstore
+	url = https://github.com/robotlover-1/pocket-kv.git

@@ -1,0 +1,123 @@
+version: "3.8"
+services:
+  tokenizer:
+    image: 192.168.239.161:5000/2404/tokenizer:1.0.0
+    environment:
+      PORT: 3002
+    deploy:
+      mode: replicated
+      replicas: 2
+      endpoint_mode: vip
+      update_config:
+        parallelism: 2
+        order: start-first
+    command: ["sh","-c","nuxt --port 3002 --module tokenizer.py --workers 2"]
+  keywords:
+    image: 192.168.239.161:5000/2404/keywords-filter:1.0.0
+    deploy:
+      mode: replicated
+      replicas: 2
+      endpoint_mode: vip
+      update_config:
+        parallelism: 2
+        order: start-first
+      rollback_config:
+        parallelism: 2
+        order: start-first
+    healthcheck:
+      test: ["CMD","grpc_health_probe","-addr=:50051"]
+      interval: 5s
+      timeout: 1s
+      retries: 3
+      start_period: 1s
+    configs:
+      - source: 2404-keywords-conf
+        target: /app/config.yaml
+      - source: 2404-keywords-dict
+        target: /app/dict.txt
+  sensitive:
+    image: 192.168.239.161:5000/2404/keywords-filter:1.0.0
+    deploy:
+      mode: replicated
+      replicas: 2
+      endpoint_mode: vip
+      update_config:
+        parallelism: 2
+        order: start-first
+      rollback_config:
+        parallelism: 2
+        order: start-first
+    entrypoint: ["./keywords-filter"]
+    command: ["--config=config.yaml","--dict=dict.txt"]
+    healthcheck:
+      test: [ "CMD","grpc_health_probe","-addr=:50051" ]
+      interval: 5s
+      timeout: 1s
+      retries: 3
+      start_period: 1s
+    configs:
+      - source: 2404-sensitive-conf
+        target: /app/config.yaml
+      - source: 2404-sensitive-dict
+        target: /app/dict.txt
+  ai-chat-service:
+    image: 192.168.239.161:5000/2404/ai-chat-service:1.0.0
+    deploy:
+      mode: replicated
+      replicas: 2
+      endpoint_mode: vip
+      update_config:
+        parallelism: 2
+        order: start-first
+      rollback_config:
+        parallelism: 2
+        order: start-first
+    entrypoint: [ "./ai-chat-service" ]
+    command: [ "--config=config.yaml" ]
+    healthcheck:
+      test: [ "CMD","grpc_health_probe","-addr=:50051" ]
+      interval: 5s
+      timeout: 1s
+      retries: 3
+      start_period: 1s
+    configs:
+      - source: 2404-ai-chat-service-conf
+        target: /app/config.yaml
+  ai-chat-backend:
+    image: 192.168.239.161:5000/2404/ai-chat-backend:1.0.0
+    ports:
+      - "7080:80"
+    deploy:
+      mode: replicated
+      replicas: 2
+      endpoint_mode: vip
+      update_config:
+        parallelism: 2
+        order: start-first
+      rollback_config:
+        parallelism: 2
+        order: start-first
+    entrypoint: [ "./ai-chat-backend" ]
+    command: [ "--config=config.yaml" ]
+    healthcheck:
+      test: [ "CMD","curl","http://localhost/api/health" ]
+      interval: 5s
+      timeout: 1s
+      retries: 3
+      start_period: 1s
+    configs:
+      - source: 2404-ai-chat-backend-conf
+        target: /app/config.yaml
+configs:
+  2404-keywords-conf:
+    file: ./configs/keywords.yaml
+  2404-keywords-dict:
+    file: ./configs/keywords-dict.txt
+  2404-sensitive-conf:
+    file: ./configs/sensitive.yaml
+  2404-sensitive-dict:
+    file: ./configs/sensitive-dict.txt
+  2404-ai-chat-service-conf:
+    file: ./configs/ai-chat-service.yaml
+  2404-ai-chat-backend-conf:
+    file: ./configs/ai-chat-backend.yaml

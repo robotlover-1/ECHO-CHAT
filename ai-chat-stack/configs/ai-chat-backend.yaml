@@ -1,0 +1,36 @@
+http:
+  ip: 0.0.0.0
+  port: 80
+log:
+  level: "info"
+  logPath: "runtime/logs/app.log"
+chat:
+  # 使用的训练模型
+  model: "gpt-3.5-turbo"
+  # 单次请求的上下文总长度,包括：请求消息+响应消息
+  max_tokens: 4096
+  # 表示语言模型输出的随机性和创造性
+  # 取值范围 0 ~ 1，值越大随机性越高
+  temperature: 0.8
+  # 用于生成文本时控制选词的随机程度
+  # 即下一个预测单词考虑的概率范围
+  # 取值范围0 ~ 1
+  top_p: 0.9
+  # 存在惩罚，用于生成文本时控制重复使用单词的程度
+  # 取值范围 0 ~ 1 ，0表示不惩罚，1表示禁止重复
+  presence_penalty: 0.8
+  # 用于控制模型生成回复时重复单词出现的频率
+  # 取值范围 0~1，值越大表示回复时会更注重避免使用已经出现的单词
+  frequency_penalty: 0.5
+  # AI助手特征描述
+  bot_desc: "你是一个AI助手，我需要你模拟一名资深的软件工程师来回答我的问题"
+  # 单次请求，保留的响应tokens数量
+  min_response_tokens: 2048
+  # 上下文缓存时长，单位s
+  context_ttl: 1800
+  # 上下文消息条数
+  context_len: 4
+dependOn:
+  ai-chat-service:
+    address: "ai-chat-service:50051"
+    accessToken: "me256487ang1chubdpdialoud22sev1ozhoguumyqca"
