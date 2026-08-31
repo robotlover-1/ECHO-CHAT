@@ -29,7 +29,7 @@ DEEPSEEK_API_KEY=sk-xxx ./start.sh   # key 走环境变量，勿提交 git
 ## 功能说明
 
 - **免密登录**：首次访问自动以 `device_id` 注册并分配额度，无短信验证码。
-- **明文 KV 存储**：问题-回答以 `qa:<原始问题>` → `<原始回答>` 存进 kvstore（key/value 均为原文，不做 hash）；语义检索的向量索引在 `semcache:<原始问题>`。
+- **明文 KV 存储**：问题-回答以 `<原始问题>` → `<原始回答>` 存进 kvstore（key/value 均为原文，不做 hash，`redis-cli -p 5160 GET <问题>` 可直接读）；语义检索的向量索引在 `semcache:<原始问题>`。
 - **公有大模型**：DeepSeek（OpenAI 兼容），模型 `deepseek-v4-flash`。
 - **来源标注**：每条回答标注「公有大模型」/「缓存命中」。
 - **tokens 统计**：页面按会话累计「总消耗」与「节省」tokens（缓存命中不计费、记为节省）。

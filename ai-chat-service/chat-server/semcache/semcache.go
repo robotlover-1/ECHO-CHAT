@@ -18,8 +18,8 @@ import (
 
 const dim = 256
 
-// 明文 Q-A 存储在 array 引擎（SET/GET）；向量索引在 hash 引擎（HSET，VSEARCH 只扫 hash）
-const qaPrefix = "qa:"
+// 明文 Q-A 存储在 array 引擎（SET/GET），key 直接用问题原文（便于 redis-cli 直接读）；
+// 向量索引在 hash 引擎（HSET，VSEARCH 只扫 hash）
 const semPrefix = "semcache:"
 
 type embedResp struct {
@@ -92,7 +92,6 @@ func rerank(ctx context.Context, query, cached string) (float64, bool, error) {
 	return r.Score, r.Shared, nil
 }
 
-func qaKey(query string) string  { return qaPrefix + query }
 func semKey(query string) string { return semPrefix + query }
 
 // 向量索引值: [u32 dim][float vec[dim]]（小端），与 kvstore parse_vec 匹配
@@ -140,8 +139,8 @@ func CacheQuery(ctx context.Context, query string) (string, bool) {
 	if cachedQ == bestKey {
 		return "", false // 前缀不匹配，忽略（防御）
 	}
-	// 读明文回答（array 引擎）
-	answer, err := getClient().Do(ctx, "GET", qaKey(cachedQ))
+	// 读明文回答（array 引擎），key 就是问题原文
+	answer, err := getClient().Do(ctx, "GET", cachedQ)
 	if err != nil {
 		return "", false
 	}
@@ -159,7 +158,7 @@ func CacheQuery(ctx context.Context, query string) (string, bool) {
 	return ans, true
 }
 
-// CacheWrite: 嵌入 → SET qa:<问题> <回答>（明文）+ HSET semcache:<问题> <[dim][vec]>
+// CacheWrite: 嵌入 → SET <问题> <回答>（明文，key=问题原文）+ HSET semcache:<问题> <[dim][vec]>
 func CacheWrite(ctx context.Context, query, answer string) error {
 	cnf := config.GetConfig()
 	if !cnf.SemanticCache.Enabled {
@@ -169,7 +168,7 @@ func CacheWrite(ctx context.Context, query, answer string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := getClient().Do(ctx, "SET", qaKey(query), answer); err != nil {
+	if _, err := getClient().Do(ctx, "SET", query, answer); err != nil {
 		return err
 	}
 	_, err = getClient().Do(ctx, "HSET", semKey(query), encodeVec(vec))
