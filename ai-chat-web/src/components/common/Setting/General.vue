@@ -21,6 +21,7 @@ const theme = computed(() => appStore.theme)
 const userInfo = computed(() => userStore.userInfo)
 
 const avatar = ref(userInfo.value.avatar ?? '')
+const avatarFileInput = ref<HTMLInputElement | null>(null)
 
 const name = ref(userInfo.value.name ?? '')
 
@@ -62,6 +63,22 @@ const languageOptions: { label: string; key: Language; value: Language }[] = [
 function updateUserInfo(options: Partial<UserInfo>) {
   userStore.updateUserInfo(options)
   ms.success(t('common.success'))
+}
+
+// 上传本地图片作头像（转 base64 存入 localStorage）
+function handleAvatarUpload(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (!target || !target.files || !target.files[0])
+    return
+  const file = target.files[0]
+  if (!file.type.startsWith('image/'))
+    return
+  const reader = new FileReader()
+  reader.onload = () => {
+    avatar.value = reader.result as string
+    updateUserInfo({ avatar: avatar.value })
+  }
+  reader.readAsDataURL(file)
 }
 
 function handleReset() {
@@ -131,6 +148,10 @@ function handleImportButtonClick(): void {
         <NButton size="tiny" text type="primary" @click="updateUserInfo({ avatar })">
           {{ $t('common.save') }}
         </NButton>
+        <NButton size="tiny" text type="primary" @click="avatarFileInput?.click()">
+          上传
+        </NButton>
+        <input ref="avatarFileInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload">
       </div>
       <div class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[100px]">{{ $t('setting.name') }}</span>
