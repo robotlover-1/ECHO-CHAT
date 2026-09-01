@@ -139,6 +139,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 	defer stream.CloseSend()
 
 	firstChunk := true
+	chunkCount := 0 // 流式过程中定期刷新 tokens 统计
 	ctx.Header("Content-type", "application/octet-stream")
 	for {
 		rsp, err := stream.Recv()
@@ -205,6 +206,22 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 				result.Text += content
 			}
 			result.Detail = rsp
+		}
+
+		// 流式过程中每 15 个 chunk 刷新一次 tokens 统计，前端实时更新
+		chunkCount++
+		if chunkCount%15 == 0 && result.Source != "" {
+			promptMsg := openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: payload.Prompt}
+			respMsg := openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: result.Text}
+			pt, err1 := tokenizer.GetTokenCount(promptMsg, chat.config.Chat.Model)
+			rt, err2 := tokenizer.GetTokenCount(respMsg, chat.config.Chat.Model)
+			if err1 == nil && err2 == nil {
+				if result.Source == "cache" {
+					result.TokensSaved = pt + rt
+				} else {
+					result.TokensUsed = pt + rt
+				}
+			}
 		}
 
 		bts, err := json.Marshal(result)
