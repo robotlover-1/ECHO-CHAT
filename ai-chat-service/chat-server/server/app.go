@@ -10,9 +10,12 @@ import (
 	keywords_filter "ai-chat-service/services/keywords-filter"
 	keywords_proto "ai-chat-service/services/keywords-filter/proto"
 	"ai-chat-service/services/tokenizer"
+	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	"github.com/sashabaranov/go-openai"
+	"net/http"
 	"time"
 )
 
@@ -98,6 +101,25 @@ func (a *app) getOpenaiClient() *openai.Client {
 	config.BaseURL = a.openaiConf.BaseUrl
 	client := openai.NewClientWithConfig(config)
 	return client
+}
+
+// streamRawRequest 手动发起流式请求并返回原始响应体。
+// 背景：deepseek-v4-flash 是推理模型，复杂问题把答案全部放在 reasoning_content，
+// content 始终为空；go-openai 的 stream 会丢弃 reasoning_content，导致前端拿到空回答。
+// 这里用原始 SSE 解析，把 reasoning_content 作为 content 的兜底。
+func (a *app) streamRawRequest(ctx context.Context, req openai.ChatCompletionRequest) (*http.Response, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	u := a.openaiConf.BaseUrl + "/chat/completions"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+a.openaiConf.ApiKey)
+	return http.DefaultClient.Do(httpReq)
 }
 func (a *app) buildChatCompletionRequest(in *proto.ChatCompletionRequest, stream bool) (req openai.ChatCompletionRequest, tokens, currTokens int, currMessage openai.ChatCompletionMessage, err error) {
 	//当前消息

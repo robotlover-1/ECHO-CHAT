@@ -14,7 +14,7 @@ import HeaderComponent from './components/Header/index.vue'
 import { HoverButton, SvgIcon } from '@/components/common'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAuthStore, useChatStore, usePromptStore } from '@/store'
-import { fetchChatAPIProcess } from '@/api'
+import { fetchChatAPIProcess, fetchDeviceLogin } from '@/api'
 import { t } from '@/locales'
 
 let controller = new AbortController()
@@ -129,7 +129,8 @@ async function onConversation() {
 
   try {
     let lastText = ''
-    const fetchChatAPIOnce = async () => {
+    const fetchChatAPIOnce = async (retried = false): Promise<void> => {
+      try {
       await fetchChatAPIProcess<Chat.ConversationResponse>({
         prompt: message,
         options,
@@ -175,6 +176,15 @@ async function onConversation() {
           }
         },
       })
+      } catch (e: any) {
+        // 会话失效（kvstore 重启）：自动重登后重试一次，避免第一条消息被吞
+        if (!retried && (e?.message ?? '').includes('401')) {
+          const data = await fetchDeviceLogin() as unknown as { access_token: string }
+          authStore.setToken(data.access_token)
+          return fetchChatAPIOnce(true)
+        }
+        throw e
+      }
     }
 
     await fetchChatAPIOnce()
@@ -263,7 +273,8 @@ async function onRegenerate(index: number) {
 
   try {
     let lastText = ''
-    const fetchChatAPIOnce = async () => {
+    const fetchChatAPIOnce = async (retried = false): Promise<void> => {
+      try {
       await fetchChatAPIProcess<Chat.ConversationResponse>({
         prompt: message,
         options,
@@ -307,6 +318,15 @@ async function onRegenerate(index: number) {
           }
         },
       })
+      } catch (e: any) {
+        // 会话失效（kvstore 重启）：自动重登后重试一次，避免第一条消息被吞
+        if (!retried && (e?.message ?? '').includes('401')) {
+          const data = await fetchDeviceLogin() as unknown as { access_token: string }
+          authStore.setToken(data.access_token)
+          return fetchChatAPIOnce(true)
+        }
+        throw e
+      }
     }
     await fetchChatAPIOnce()
     authStore.getSession().catch(() => {})   // 刷新余额

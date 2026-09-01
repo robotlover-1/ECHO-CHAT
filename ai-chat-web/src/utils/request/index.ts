@@ -38,8 +38,9 @@ function http<T = any>(
 
   const failHandler = (error: Response<Error>) => {
     if (error?.response?.status === 401) {
+      // 免密自动登录下不再 reload：由调用方（聊天组件）感知 401 后自动重登并重试，
+      // 避免 kvstore 重启（会话失效）后第一条消息被吞掉
       ss.remove('SECRET_TOKEN')
-      window.location.reload()
     }
 
     afterRequest?.()

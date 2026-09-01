@@ -9,12 +9,16 @@ import (
 	"ai-chat-service/pkg/log"
 	"ai-chat-service/proto"
 	"ai-chat-service/services/tokenizer"
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/google/uuid"
 	"github.com/sashabaranov/go-openai"
 	"io"
+	"net/http"
+	"strings"
 	"time"
 )
 
@@ -121,8 +125,11 @@ func (s *chatService) ChatCompletion(ctx context.Context, in *proto.ChatCompleti
 			s.log.Error(err)
 			return
 		}
-		if err := semcache.CacheWrite(context.Background(), in.Message, resp.Choices[0].Message.Content); err != nil {
-			s.log.Error(err)
+		// 空回答不写缓存，避免污染
+		if content := resp.Choices[0].Message.Content; content != "" {
+			if err := semcache.CacheWrite(context.Background(), in.Message, content); err != nil {
+				s.log.Error(err)
+			}
 		}
 	}()
 	return res, err
@@ -182,52 +189,76 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 	//关键词提取
 	keywords := app.keywords(in)
 
-	client := app.getOpenaiClient()
 	req, tokens, currTokens, currMessage, err := app.buildChatCompletionRequest(in, false)
 	if err != nil {
 		s.busMetrics.ErrQuestionsTotalCounter.Inc()
 		s.log.Error(err)
 		return err
 	}
-	chatStream, err := client.CreateChatCompletionStream(stream.Context(), req)
+	// deepseek-v4-flash 是推理模型：复杂问题可能把答案全放 reasoning_content、content 为空，
+	// go-openai 的 stream 会丢弃 reasoning_content。改用原始 SSE 解析，content 为空时用 reasoning_content 兜底。
+	req.Stream = true
+	httpResp, err := app.streamRawRequest(stream.Context(), req)
 	if err != nil {
 		s.busMetrics.ErrQuestionsTotalCounter.Inc()
 		s.log.Error(err)
 		return err
 	}
-	defer chatStream.Close()
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
+		s.log.ErrorF("llm stream status=%d body=%s", httpResp.StatusCode, string(body))
+		s.busMetrics.ErrQuestionsTotalCounter.Inc()
+		return fmt.Errorf("llm stream status=%d", httpResp.StatusCode)
+	}
+	scanner := bufio.NewScanner(httpResp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	completionContent := ""
 	resultID := ""
-	for {
-		resp, err := chatStream.Recv()
-		if err != nil && err != io.EOF {
-			s.log.Error(err)
-			return err
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
 		}
-		if err == io.EOF {
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
 			break
 		}
+		var chunk struct {
+			ID      string `json:"id"`
+			Choices []struct {
+				Delta struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
 		if resultID == "" {
-			resultID = resp.ID
+			resultID = chunk.ID
 		}
-		completionContent += resp.Choices[0].Delta.Content
-		res := &proto.ChatCompletionStreamResponse{}
-		bytes, err := json.Marshal(resp)
-		if err != nil {
-			s.log.Error(err)
-			return err
+		delta := chunk.Choices[0].Delta
+		text := delta.Content
+		if text == "" {
+			text = delta.ReasoningContent
 		}
-		err = jsonpb.UnmarshalString(string(bytes), res)
-		if err != nil {
-			s.log.Error(err)
-			return err
-		}
+		completionContent += text
+		res := app.buildChatCompletionStreamResponse(resultID, text, chunk.Choices[0].FinishReason)
 		res.Source = "llm" // 公有大模型回答
-		err = stream.Send(res)
-		if err != nil {
+		if err := stream.Send(res); err != nil {
 			s.log.Error(err)
 			return err
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		s.log.Error(err)
+		return err
 	}
 	resultMessage := openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleAssistant,
@@ -288,8 +319,11 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 			s.log.Error(err)
 			return
 		}
-		if err := semcache.CacheWrite(context.Background(), in.Message, completionContent); err != nil {
-			s.log.Error(err)
+		// 空回答不写缓存，避免污染（否则一次空回答会让后续近似问题都命中空缓存）
+		if completionContent != "" {
+			if err := semcache.CacheWrite(context.Background(), in.Message, completionContent); err != nil {
+				s.log.Error(err)
+			}
 		}
 	}()
 	return nil
