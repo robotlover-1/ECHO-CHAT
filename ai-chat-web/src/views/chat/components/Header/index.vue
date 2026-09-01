@@ -21,7 +21,12 @@ const authStore = useAuthStore()
 const chatStore = useChatStore()
 
 const collapsed = computed(() => appStore.siderCollapsed)
+const theme = computed(() => appStore.theme)
 const currentChatHistory = computed(() => chatStore.getChatHistoryByCurrentActive)
+
+function toggleTheme() {
+  appStore.setTheme(appStore.theme === 'dark' ? 'light' : 'dark')
+}
 
 function handleUpdateCollapsed() {
   appStore.setSiderCollapsed(!collapsed.value)
@@ -69,6 +74,11 @@ function toggleUsingContext() {
         >
           额度 {{ authStore.session?.quota }}
         </span>
+        <HoverButton @click="toggleTheme">
+          <span class="text-xl text-[#4f555e] dark:text-white">
+            <SvgIcon :icon="theme === 'dark' ? 'ri:sun-line' : 'ri:moon-line'" />
+          </span>
+        </HoverButton>
         <HoverButton @click="toggleUsingContext">
           <span class="text-xl" :class="{ 'text-[#4b9e5f]': usingContext, 'text-[#a8071a]': !usingContext }">
             <SvgIcon icon="ri:chat-history-line" />

@@ -505,7 +505,6 @@ onUnmounted(() => {
 <template>
   <div class="flex flex-col w-full h-full">
     <HeaderComponent
-      v-if="isMobile"
       :using-context="usingContext"
       @export="handleExport"
       @toggle-using-context="toggleUsingContext"
@@ -538,6 +537,7 @@ onUnmounted(() => {
                 :error="item.error"
                 :loading="item.loading"
                 :source="item.source"
+                :class="index === dataSources.length - 1 && loading && !item.inversion && !item.error ? 'streaming-msg' : ''"
                 @regenerate="onRegenerate(index)"
                 @delete="handleDelete(index)"
               />
@@ -602,3 +602,15 @@ onUnmounted(() => {
     </footer>
   </div>
 </template>
+
+<style>
+/* 流式回答末尾的闪烁光标 */
+.streaming-msg .markdown-body::after {
+  content: '▍';
+  margin-left: 2px;
+  animation: echochat-blink 1s step-start infinite;
+}
+@keyframes echochat-blink {
+  50% { opacity: 0; }
+}
+</style>
