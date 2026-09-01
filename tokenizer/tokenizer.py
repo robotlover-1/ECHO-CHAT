@@ -89,7 +89,9 @@ def rerank_score(query, cached_query):
     kw2 = set(analyse.extract_tags(cached_query, topK=6))
     m1 = set(analyse.extract_tags(query, topK=6, allowPOS=('n', 'vn', 'v', 'eng')))
     m2 = set(analyse.extract_tags(cached_query, topK=6, allowPOS=('n', 'vn', 'v', 'eng')))
-    shared = bool(m1 & m2)
+    # 双方都没有可用的名词/动词关键词时也视为共享：
+    # 否则对"红黑树是什么"这类短问题，m1/m2 都为空 → shared=False → 相同问题缓存也永不命中
+    shared = bool(m1 & m2) or (not m1 and not m2)
     if not (kw1 | kw2):
         return 1.0, True
     return len(kw1 & kw2) / len(kw1 | kw2), shared
