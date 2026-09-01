@@ -49,7 +49,7 @@ function toggleUsingContext() {
 
 <template>
   <header
-    class="sticky top-0 left-0 right-0 z-30 border-b dark:border-neutral-800 bg-white/80 dark:bg-black/20 backdrop-blur"
+    class="sticky top-0 left-0 right-0 z-30 border-b bg-white/80 dark:bg-[#0a1120]/60 dark:border-cyan-400/20 backdrop-blur"
   >
     <div class="relative flex items-center justify-between min-w-0 overflow-hidden h-14">
       <div class="flex items-center">

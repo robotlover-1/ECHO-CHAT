@@ -111,7 +111,8 @@ function handleRegenerate() {
         />
         <span
           v-if="!inversion && source"
-          class="ml-1 text-[10px] px-1.5 py-0.5 rounded border border-neutral-300 text-neutral-400 self-center whitespace-nowrap"
+          class="ml-1 text-[10px] px-1.5 py-0.5 rounded self-center whitespace-nowrap"
+          :class="source === 'cache' ? 'text-[#4ade80] border border-[#4ade80]/40' : 'text-[#22d3ee] border border-[#22d3ee]/40 neon-text'"
         >
           {{ source === 'cache' ? '缓存命中' : '公有大模型' }}
         </span>

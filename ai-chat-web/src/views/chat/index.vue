@@ -517,7 +517,7 @@ onUnmounted(() => {
       >
         <div
           id="image-wrapper"
-          class="w-full max-w-screen-xl m-auto dark:bg-[#101014]"
+          class="w-full max-w-screen-xl m-auto dark:bg-transparent"
           :class="[isMobile ? 'p-2' : 'p-4']"
         >
           <template v-if="!dataSources.length">
@@ -559,7 +559,7 @@ onUnmounted(() => {
         <div v-if="tokenStats.consumed > 0 || tokenStats.saved > 0" class="text-xs text-neutral-400 pb-2">
           总消耗 {{ tokenStats.consumed }} tokens ｜ 节省 {{ tokenStats.saved }} tokens
         </div>
-        <div class="flex items-center justify-between space-x-2">
+        <div class="flex items-center justify-between space-x-2 glass-panel rounded-2xl px-3 py-2">
           <HoverButton @click="handleClear">
             <span class="text-xl text-[#4f555e] dark:text-white">
               <SvgIcon icon="ri:delete-bin-line" />
