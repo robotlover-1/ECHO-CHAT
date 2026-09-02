@@ -262,6 +262,16 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 		s.log.Error(err)
 		return err
 	}
+	// 回答被截断(length)时补一句明确提示，避免"戛然而止"误以为是 bug
+	if lastFinish == "length" {
+		notice := "\n\n⚠ 回答因长度限制被截断，请继续提问或换一种问法"
+		res := app.buildChatCompletionStreamResponse(resultID, notice, "stop")
+		res.Source = "llm"
+		if err := stream.Send(res); err != nil {
+			s.log.Error(err)
+			return err
+		}
+	}
 	resultMessage := openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleAssistant,
 		Content: completionContent,
