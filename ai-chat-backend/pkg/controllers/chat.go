@@ -209,8 +209,9 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		}
 
 		// 流式过程中每 15 个 chunk 刷新一次 tokens 统计，前端实时更新
+		// 仅 LLM 回答需要（缓存命中答案瞬间到齐，不做周期统计，避免上千次 tokenizer 调用拖垮流式）
 		chunkCount++
-		if chunkCount%15 == 0 && result.Source != "" {
+		if chunkCount%15 == 0 && result.Source == "llm" {
 			promptMsg := openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: payload.Prompt}
 			respMsg := openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: result.Text}
 			pt, err1 := tokenizer.GetTokenCount(promptMsg, chat.config.Chat.Model)
