@@ -14,7 +14,7 @@ chat:
   # 使用的训练模型（DeepSeek v4-flash，与用户 key 匹配）
   model: "deepseek-v4-flash"
   # 单次请求的上下文总长度,包括：请求消息+响应消息
-  max_tokens: 4096
+  max_tokens: 8192
   # 表示语言模型输出的随机性和创造性
   # 取值范围 0 ~ 1，值越大随机性越高
   temperature: 0.8

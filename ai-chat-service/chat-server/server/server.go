@@ -215,6 +215,7 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	completionContent := ""
 	resultID := ""
+	lastFinish := "" // 记录最后 finish_reason，length=被截断
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -249,6 +250,7 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 			text = delta.ReasoningContent
 		}
 		completionContent += text
+		lastFinish = chunk.Choices[0].FinishReason
 		res := app.buildChatCompletionStreamResponse(resultID, text, chunk.Choices[0].FinishReason)
 		res.Source = "llm" // 公有大模型回答
 		if err := stream.Send(res); err != nil {
@@ -319,8 +321,8 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 			s.log.Error(err)
 			return
 		}
-		// 空回答不写缓存，避免污染（否则一次空回答会让后续近似问题都命中空缓存）
-		if completionContent != "" {
+		// 空回答或被截断(length)的回答不写缓存，避免污染
+		if completionContent != "" && lastFinish != "length" {
 			if err := semcache.CacheWrite(context.Background(), in.Message, completionContent); err != nil {
 				s.log.Error(err)
 			}
