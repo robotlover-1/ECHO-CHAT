@@ -248,8 +248,16 @@ func (a *app) withSource(res *proto.ChatCompletionStreamResponse, source string)
 
 func (a *app) buildChatCompletionStreamResponseList(id, msg string) []*proto.ChatCompletionStreamResponse {
 	list := make([]*proto.ChatCompletionStreamResponse, 0)
-	for _, delta := range msg {
-		list = append(list, a.buildChatCompletionStreamResponse(id, string(delta), ""))
+	// 每 100 字符一个 chunk：逐字符流式对长回答会产生数千个 chunk（8000字符=8000条gRPC/HTTP写入），
+	// 拖垮缓存命中链路；改为大块发送显著减少消息数量
+	const chunkSize = 100
+	runes := []rune(msg)
+	for i := 0; i < len(runes); i += chunkSize {
+		end := i + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		list = append(list, a.buildChatCompletionStreamResponse(id, string(runes[i:end]), ""))
 	}
 	return list
 }
