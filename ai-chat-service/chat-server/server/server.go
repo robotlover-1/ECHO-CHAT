@@ -245,13 +245,25 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 			resultID = chunk.ID
 		}
 		delta := chunk.Choices[0].Delta
-		text := delta.Content
+		text := delta.Content // 只把正式 content 当答案；reasoning_content 是思考过程，不作为答案显示
+		fin := chunk.Choices[0].FinishReason
+		lastFinish = fin
 		if text == "" {
-			text = delta.ReasoningContent
+			// 纯推理 chunk（无内容且无结束信号）：跳过，不向用户展示思考过程
+			if fin == "" {
+				continue
+			}
+			// 结束 chunk（stop/length）：空内容但带结束信号，发给前端收尾
+			res := app.buildChatCompletionStreamResponse(resultID, "", fin)
+			res.Source = "llm"
+			if err := stream.Send(res); err != nil {
+				s.log.Error(err)
+				return err
+			}
+			continue
 		}
 		completionContent += text
-		lastFinish = chunk.Choices[0].FinishReason
-		res := app.buildChatCompletionStreamResponse(resultID, text, chunk.Choices[0].FinishReason)
+		res := app.buildChatCompletionStreamResponse(resultID, text, "")
 		res.Source = "llm" // 公有大模型回答
 		if err := stream.Send(res); err != nil {
 			s.log.Error(err)
@@ -261,6 +273,17 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 	if err := scanner.Err(); err != nil {
 		s.log.Error(err)
 		return err
+	}
+	// 模型只在推理、从未产出正式 content → 给明确提示（不把思考过程当答案）
+	if completionContent == "" {
+		notice := "⚠ 模型未生成正式回答（可能在深度推理中），请重试一次或换个问法"
+		res := app.buildChatCompletionStreamResponse(resultID, notice, "stop")
+		res.Source = "llm"
+		if err := stream.Send(res); err != nil {
+			s.log.Error(err)
+			return err
+		}
+		lastFinish = "no_content"
 	}
 	// 回答被截断(length)时补一句明确提示，避免"戛然而止"误以为是 bug
 	if lastFinish == "length" {
