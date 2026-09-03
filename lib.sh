@@ -12,6 +12,7 @@ PID_DIR="$BASE/runtime/pids"
 SERVICES=(
   "kvstore|5160|$BASE|./kvstore/kvstore/kvstore configs/kvstore-ai.conf"
   "tokenizer|3002|$BASE/tokenizer|nuxt --port 3002 --module tokenizer.py --workers 2"
+  "semantic|3003|$BASE/semantic|nuxt --port 3003 --module semantic.py --workers 2"
   "sensitive|50053|$BASE/keywords-filter|$BASE/bin/keywords-filter --config=dev.config.yaml --dict=dict.txt"
   "keyword|50054|$BASE/keywords-filter|$BASE/bin/keywords-filter --config=dev.kw.config.yaml --dict=keyword-dict.txt"
   "mock|8083|$BASE/mock-openai-api|$BASE/bin/mock-openai-api --config=dev.config.yaml"
