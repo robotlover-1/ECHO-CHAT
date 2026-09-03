@@ -180,7 +180,7 @@ Expected: `PASS: 44 cases field-identical (eps=1e-07)` —— 证明工具本身
 
 ```bash
 git add semantic/tests/test_golden.py semantic/tests/golden_cases.json
-git commit -m "test(semantic): 录制改造前 tokenizer 的 embed/rerank 金样(34+12 条)与字段级差分工具"
+git commit -m "test(semantic): 录制改造前 tokenizer 的 embed/rerank 金样(32+12 条)与字段级差分工具"
 ```
 
 ---
