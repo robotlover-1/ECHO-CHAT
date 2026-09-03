@@ -97,6 +97,10 @@ SUBJECT_PATTERNS = [
 
 def normalize_subject(subject):
     subject = re.sub(r"^(一个|简单的|简易的|完整的|基础的|版本的)+", "", subject)
+    # 剥尾部后缀/操作词：写一个红黑树的实现 → 红黑树；红黑树的删除 → 红黑树。
+    # 否则 SUBJECT:红黑树的实现 与 SUBJECT:红黑树 标记桶不匹配、余弦被压低。
+    # 删除/插入等操作区分由 rerank 的 extract_operation 单独负责。
+    subject = re.sub(r"(的实现(方法|方式)?|的代码|的方法|的程序|的demo|的示例|的删除|的插入|的遍历|的查询|的添加|的更新)$", "", subject)
     return subject.strip()
 
 
@@ -260,16 +264,20 @@ def rerank_score(query, cached_query):
     qs, cs = extract_subject(query), extract_subject(cached_query)
     if _subject_conflict(qs, cs):
         return 0.0, False  # subject_conflict
-    qi, ci = extract_intent(query), extract_intent(cached_query)
-    if not intent_compatible(qi, ci):
-        return 0.0, False  # intent_conflict（含 history/unknown）
     ql, cl = extract_language(query), extract_language(cached_query)
     if ql and cl and ql != cl:
         return 0.0, False  # language_conflict
-    # 操作冲突：同为操作句但操作不同（插入 vs 删除）→ 拒
     qop, cop = extract_operation(query), extract_operation(cached_query)
-    if qop and cop and qop != cop:
-        return 0.0, False  # operation_conflict
+    if qop and cop:
+        # 双方都有具体操作（删除/插入…）：同操作放行（跨过意图判断——
+        # "X的删除"是operation、"写一个X的删除"被写成implementation，语义相同），不同操作拒绝
+        if qop != cop:
+            return 0.0, False  # operation_conflict
+    else:
+        # 无共同操作 → 意图校验
+        qi, ci = extract_intent(query), extract_intent(cached_query)
+        if not intent_compatible(qi, ci):
+            return 0.0, False  # intent_conflict（含 history/unknown）
     # 普通词 Jaccard（兜底）
     kw1 = set(analyse.extract_tags(query, topK=6))
     kw2 = set(analyse.extract_tags(cached_query, topK=6))
