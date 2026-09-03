@@ -10,13 +10,20 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"ai-chat-service/pkg/config"
 	kredis "ai-chat-service/pkg/db/redis"
+	"ai-chat-service/pkg/log"
 	"github.com/redis/go-redis/v9"
 )
 
 const dim = 256
+
+const semanticTimeout = 1500 * time.Millisecond
+
+// 语义服务专用 HTTP client：整体超时兜底，防 semantic 卡死拖住聊天。
+var semanticClient = &http.Client{Timeout: semanticTimeout}
 
 // 明文 Q-A 存储在 array 引擎（SET/GET），key 直接用问题原文（便于 redis-cli 直接读）；
 // 向量索引在 hash 引擎（HSET，VSEARCH 只扫 hash）
@@ -56,17 +63,29 @@ func getClient() *poolClient {
 
 func embedText(ctx context.Context, text string) (vec []float32, bypass bool, subject string, err error) {
 	body, _ := json.Marshal(map[string]string{"text": text})
-	resp, err := http.Post(config.GetConfig().DependOn.Tokenizer.Address+"/embed",
-		"application/json", bytes.NewReader(body))
+	endpoint := config.GetConfig().DependOn.Semantic.Address + "/embed"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, false, "", err
 	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := semanticClient.Do(req)
+	if err != nil {
+		log.ErrorF("semantic_unavailable: %v", err)
+		return nil, false, "", err
+	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.ErrorF("semantic_bad_status: %d", resp.StatusCode)
+		return nil, false, "", fmt.Errorf("embed status=%d", resp.StatusCode)
+	}
 	var r embedResp
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		log.ErrorF("invalid_json: %v", err)
 		return nil, false, "", err
 	}
 	if r.Code != 200 || len(r.Embedding) != dim {
+		log.ErrorF("invalid_embedding_dimension: code=%d dim=%d", r.Code, len(r.Embedding))
 		return nil, false, "", fmt.Errorf("embed failed: code=%d dim=%d", r.Code, len(r.Embedding))
 	}
 	vec = make([]float32, dim)
@@ -78,17 +97,29 @@ func embedText(ctx context.Context, text string) (vec []float32, bypass bool, su
 
 func rerank(ctx context.Context, query, cached string) (float64, bool, error) {
 	body, _ := json.Marshal(map[string]string{"query": query, "cached_query": cached})
-	resp, err := http.Post(config.GetConfig().DependOn.Tokenizer.Address+"/rerank",
-		"application/json", bytes.NewReader(body))
+	endpoint := config.GetConfig().DependOn.Semantic.Address + "/rerank"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, false, err
 	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := semanticClient.Do(req)
+	if err != nil {
+		log.ErrorF("semantic_unavailable: %v", err)
+		return 0, false, err
+	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.ErrorF("semantic_bad_status: %d", resp.StatusCode)
+		return 0, false, fmt.Errorf("rerank status=%d", resp.StatusCode)
+	}
 	var r rerankResp
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		log.ErrorF("invalid_json: %v", err)
 		return 0, false, err
 	}
 	if r.Code != 200 {
+		log.ErrorF("rerank_failed: %s", r.Msg)
 		return 0, false, fmt.Errorf("rerank failed: %s", r.Msg)
 	}
 	return r.Score, r.Shared, nil

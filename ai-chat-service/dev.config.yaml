@@ -54,6 +54,8 @@ dependOn:
     accessToken: "ang1chubdev1ozhome256487d22sapguuv1ozhom"
   tokenizer:
     address: "http://127.0.0.1:3002"
+  semantic:
+    address: "http://127.0.0.1:3003"
 semantic_cache:
   enabled: true
   threshold: 0.35

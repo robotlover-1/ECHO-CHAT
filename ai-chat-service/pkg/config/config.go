@@ -52,6 +52,9 @@ type Config struct {
 		Tokenizer struct {
 			Address string
 		}
+		Semantic struct {
+			Address string
+		}
 	}
 	VectorDB struct {
 		Url                string
