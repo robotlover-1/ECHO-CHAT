@@ -1,218 +1,290 @@
 # ECHO-CHAT 语义检索 Phase 1：高精度规则与别名体系设计文档
 
 - 日期：2026-09-03
-- 状态：已批准（brainstorming 逐段确认）
-- 位置：ECHO-CHAT monorepo（`semantic/` 服务内模块化 + Go `semcache.go` 指纹前置）
-- 关联：`proj/tmp/ECHO-CHAT语义检索高命中率改造方案.md`（远景）、`proj/tmp/ECHO-CHAT语义服务解耦方案评审与修改建议 (1).md`（评审）、`docs/superpowers/specs/2026-09-03-semantic-service-decouple-design.md`（Phase 0，已完成）
+- 状态：已批准（吸收评审意见修订后）
+- 位置：ECHO-CHAT monorepo（`semantic/` 服务内模块化 + Go `semcache.go` 指纹候选前置 + Top-K 提升）
+- 关联：`proj/tmp/ECHO-CHAT语义检索高命中率改造方案.md`（远景）、`proj/tmp/ECHO-CHAT语义服务解耦方案评审与修改建议 (1).md`、`proj/tmp/ECHO-CHAT语义检索Phase1规则与别名方案评审.md`（本设计评审，有条件批准）、`docs/superpowers/specs/2026-09-03-semantic-service-decouple-design.md`（Phase 0，已完成）
 
 ## 背景与目标
 
-Phase 0 已完成服务解耦：语义职责独立在 `semantic/:3003`（/embed /rerank，256 维 FNV 词面嵌入，规则决策），Go `semcache` 指语义服务并做 VSEARCH 检索 + 阈值。**检索效果与拆分前一致**——即仍受词面嵌入天花板限制："红黑树 vs rbtree" 无公共词难命中；语言空值漏洞会让"生成红黑树"误用"C++ 答案"。
+Phase 0 完成服务解耦：`semantic/:3003` 独立承担 /embed /rerank，Go `semcache` 做 VSEARCH+阈值。检索效果与拆分前一致——仍受词面嵌入天花板限制（"红黑树 vs rbtree" 难命中；语言空值漏洞）。Phase 1 目标（**有意的行为变化**）：
 
-Phase 1 目标（**有意的行为变化**，不再保持 Phase 0 的逐字段不变）：
-1. 别名归一：`红黑树 / rbtree / RB tree / red black tree` 归一到稳定 `subject_id`，跨措辞可命中；
-2. 结构化槽位：语言 / 意图 / 操作 / 输出类型可判定，硬约束 C≠C++、定义≠实现、插入≠删除；
-3. 语义指纹精确缓存：同槽位不同措辞直接命中、绕开向量与阈值；
-4. 验收矩阵测试集（几十条）取代 Phase-0 金样，作为 Phase 1 权威回归。
+1. 别名归一：红黑树 / rbtree / RB tree / red black tree → 稳定 `subject_id`，跨措辞命中；
+2. 结构化槽位：subject_id/intent/language/operation/output_type + **residual/constraint**，硬约束 C≠C++、定义≠实现、插入≠删除、带约束实现 ≠ 无约束实现；
+3. **安全语义指纹**：粗指纹定位候选 + decision/残差复核，**指纹不直达答案**；
+4. 验收/权威测试集（≥120 对）取代 Phase-0 金样。
+
+## 评审修订记录（2026-09-03）
+
+| # | 评审意见 | 处置 |
+|---|---|---|
+| 阻断1 | 指纹字段不足、`fp→answer` 绕过 decision 有碰撞误命中风险 | 采纳：指纹**只存候选问题**、命中后重跑 decision+残差复核；`fingerprint_eligible` 保守准入（§指纹）；新增残差约束与 `constraint_conflict`（§decision） |
+| 阻断2 | 现有 extract_subject 覆盖不了英文与"使用/编写"句式，验收矩阵不保 | 采纳：中英文句式补全 + **双路抽取**（全句本体最长匹配 ‖ 句式抽 subject→本体） |
+| 阻断3 | 别名模糊匹配边界不明 | 采纳：Phase 1 仅确定性匹配（NFKC+词边界+中文受控子串+最长优先+alias 全局唯一校验）；模糊留后仅作召回 |
+| 阻断4 | decision 方向性/缺失槽位/unknown/包含关系过宽 | 采纳：language 敏感性**双方对称**（含 output_type=code）；operation **任一侧不同即拒**；unknown 不进指纹、与代码型不对称默认拒；有 subject_id 时仅 ID 相等放行 |
+| 阻断5 | 指纹未版本化、拼接不稳定 | 采纳：稳定 JSON 序列化 + schema/parser/ontology 版本入 payload；键命名空间 `semfp:v1:` |
+| 阻断6 | 写入一致性/覆盖/TTL/升级失效未定义 | 采纳：写入顺序与幂等、fp 冲突 last-write-wins、删除/TTL/升级失效策略（§数据一致性） |
+| §14 | reason 不能只解析不记录 | 采纳（轻量）：Go 对 fp 命中/碰撞/回退与 decision 关键结果打标签日志；Prometheus 指标延后到 metrics-bus 集成（defer，注明） |
+| §13 | 验收集 100~300 对、Top-5→Top-30、Recall@K | 采纳：权威集目标 ≥120 对起（分类见 §测试），VSEARCH Top-K 配置化默认 30；Recalc@K 脚本 |
+| 建议 | 先 20-30 概念起步再扩 | 折中：首批 ≥40 核心概念（覆盖矩阵+常见 CS·DS·算法），词库可扩；不追求 60-120 一版到位 |
 
 ## 已确认决策
 
-- **范围（裁剪版）**：别名本体(subject_id)+canonical 嵌入 + 语言/意图/操作/输出类型硬约束 + 语义指纹 + 验收矩阵。framework/version/platform 槽位只留 None 骨架不做规则。
-- **决策归属 semantic**：解析/decision 全部在 Python 侧（本体所在）；/rerank 升级返回 `reason`；Go 只加"指纹精确命中"前置与消费新字段，**零 kvstore 格式变更、无数据迁移**。
-- **本体规模**：精选手工审核 60~120 条 CS·DS·算法概念，覆盖验收矩阵与常见编码题；中英文/缩写都作 alias。
-- **检索顺序**：`① GET semfp:<fp> → ② VSEARCH → ③ decision`（fingerprint 可配置开关）。
-- **模块化顺势落地**：`semantic.py` 收敛为薄路由层；纯逻辑拆 `ontology.py / parse.py / embedding.py / decision.py`（离线可测、也为 Phase 2 模型替换铺路）。
-- **Phase-0 金样退役**：canonical 嵌入改变 /embed 输出（有意），旧 `test_golden.py`/`golden_cases.json` 不再作 CI 门，标注 legacy。
+- 决策/解析全部在 semantic（本体所在）；Go 最小改动（fp 候选前置、Top-K、reason 日志），**零 kvstore 格式变更、无迁移**。
+- 检索顺序：`normalize → 解析 → 准入/bypass → ① fp 候选(decision 复核) → ② VSEARCH Top-30 → decision → 命中/miss`。
+- **指纹安全红线**：`semfp` 存候选问题文本，不存答案；任何命中前必过 `decide()` + 残差复核。
+- 模块化：`semantic.py` 薄路由；`ontology/`、`parse.py`、`embedding.py`、`decision.py` 纯函数（离线 pytest 可测）。
+- 本体为**数据文件**（`ontology/concepts.json`）+ loader/validator，非硬编码。
+- Phase-0 金样退役标注 legacy（canonical 嵌入有意改变输出）。
 
-## 验收矩阵（行为预期，权威回归）
+## 验收矩阵（权威回归，行为预期）
 
-| # | Query A | Query B | 预期 |
+### 必须命中
+
+| # | Query A | Query B | 期望路径 |
 |---|---|---|---|
-| 1 | 生成一个红黑树 | 生成一个 rbtree | 命中（fp 或召回） |
-| 2 | 用 C 语言生成红黑树 | 使用 C 编写 rbtree | 命中（同 fp） |
-| 3 | 用 C 语言生成红黑树 | 使用 C++ 编写 rbtree | 拒绝 language_conflict |
-| 4 | 红黑树是什么 | what is a red-black tree | 命中（定义类语言不敏感） |
-| 5 | 红黑树是什么 | 实现一个 red-black tree | 拒绝 intent_conflict |
-| 6 | 用 Python 实现红黑树插入 | 用 Python 实现 rbtree 删除 | 拒绝 operation_conflict |
-| 7 | 继续修改上面的红黑树 | 生成红黑树 | 绕过 context_dependent |
-| 8 | 生成红黑树（无语言） | 用 C++ 生成红黑树 | 拒绝（实现类敏感） |
-| 9 | 用 C 生成红黑树 | 用 C++ 生成 rbtree | 拒绝 language_conflict |
-| 10 | 红黑树插入 | rbtree 删除 | 拒绝 operation_conflict |
+| M1 | 生成一个红黑树 | 生成一个 rbtree | 同 fp 候选→decision |
+| M2 | 用 C 语言生成红黑树 | 使用 C 编写 rbtree | 同 fp（中文"使用/编写"句式覆盖） |
+| M3 | 红黑树是什么 | what is a red-black tree | 双路 subject 抽取 + definition 语言不敏感 |
+| M4 | 用 Python 实现红黑树插入 | implement RB-tree insertion in Python | 槽位全等（英文 op/intent 归一） |
+| M5 | 红黑树的插入 | 写一个红黑树的插入 | op 同=insert → 放行（老兼容案例） |
 
-附加回归子集：Phase-0 期间线上已知能命中/被拒的近似问题对（决策级 match/reject 不回归，非逐字节）。
+### 必须拒绝
 
-## 关键事实（已核实，Phase 0 后）
+| # | Query A | Query B | reason |
+|---|---|---|---|
+| R1 | C 实现红黑树 | C++ 实现 rbtree | language_conflict |
+| R2 | 生成红黑树（无语言） | 用 C++ 生成红黑树 | language_conflict（实现类敏感、对称） |
+| R3 | 红黑树是什么 | 实现 red-black tree | intent_conflict |
+| R4 | Python 实现红黑树插入 | Python 实现 rbtree 删除 | operation_conflict |
+| R5 | 红黑树插入 | rbtree 删除 | operation_conflict |
+| R6 | 完整实现红黑树 | 只实现红黑树插入 | operation_conflict（一方 op=insert 一方 None） |
+| R7 | 实现线程安全的 C++ 红黑树 | 实现持久化的 C++ 红黑树 | constraint_conflict / 非 eligible |
+| R8 | 实现一个带父指针的红黑树 | 实现一个支持重复键的红黑树 | constraint_conflict / 非 eligible |
 
-- `semantic/semantic.py` 单文件 265 行 = nuxt 路由 + 全部规则；`/embed` 返回 `{code, embedding[256], bypass_cache, context_dependent, intent, subject}`；`/rerank` 返回 `{code, score, shared}`；`/healthz` GET。
-- `ai-chat-service/chat-server/semcache/semcache.go`：`embedText`/`rerank` 走 `DependOn.Semantic.Address`，1.5s 超时；`CacheQuery` = VSEARCH top5 循环（阈值 0.35 + rerank 阈值 0.25 + shared 门）；`CacheWrite` = SET 明文 Q-A + HSET `semcache:<q>` 向量。缓存 key 前缀：`semcache:`（hash 引擎向量）/ 问题原文（array 引擎明文）。
-- `dependOn.tokenizer`（计 token）与 `dependOn.semantic`（嵌入/rerank）已分离。
-- 主题抽取现状：`SUBJECT_PATTERNS` + `normalize_subject` 产出 subject **文本**（非 ID）；语言冲突现状**只在双方语言都识别且不同**才拒（空值漏洞）；操作冲突现状双方都识别且不同才拒。
-- 语义缓存准入现状：`bypass || subject==""` → 不查不写（安全收窄）。
-- nuxt 底层 starlette，支持 GET 路由。
+### 必须绕过（不查不写全局缓存）
+
+| # | 文本 | reason |
+|---|---|---|
+| B1 | 继续修改上面的红黑树 | context_dependent |
+| B2 | 把刚才的 C++ 版本改成 C | context_dependent |
+| B3 | 记住以后都使用 Rust | stateful_instruction |
+
+### 本体/识别边界（防误伤）
+
+| # | 断言 |
+|---|---|
+| E1 | tree ≠ binary tree ≠ binary search tree ≠ red-black tree（subject_id 只等号放行） |
+| E2 | RBAC 不得命中 rbtree（词边界+全局唯一 alias） |
+| E3 | JavaScript 不得识别为 Java；C++ 不得识别为 C；C# 不得识别为 C（长模式先匹配） |
+| E4 | 无约束查询 不得复用 带约束候选（residual 不等 → 拒） |
+| E5 | 指纹碰撞安全：§R7/R8 五变体间互不共享答案 |
 
 ## 明确不做（Out of scope）
 
-- framework / version / platform 槽位抽取规则（仅数据结构预留 None）
-- 真 Embedding / Sparse / Qdrant / Cross-Encoder（Phase 2/3）
-- kvstore 向量记录格式变更、answer 去重（answer_ref）、metadata 落库
-- reason 驱动 Go 决策逻辑（v1 仅透传观测）
-- 阈值在验证集上的统计校准（Phase 4 数据闭环）
-- 大规模词库与自动挖掘别名候选
+- framework/version/platform 槽位规则（仅 None 骨架）
+- 真 Embedding/Sparse/Qdrant/Cross-Encoder（Phase 2+）
+- kvstore 向量记录格式变更、answer_ref 去重、metadata 落库、原子事务（kvstore 无 multi；用确定性顺序+幂等+best-effort）
+- Prometheus 指标接入（metrics-bus 集成延后；本阶段 reason 走标签日志）
+- 拼写纠错/编辑距离模糊别名（仅作召回候选，不定 subject_id）
+- 大规模词库与自动挖掘候选别名
 
 ## 组件设计
 
-### ① 模块拆分（semantic/ 服务内）
+### ① 模块结构
 
 ```text
 semantic/
-├── semantic.py        # 薄路由层：/embed /rerank /healthz，只做参数校验+调纯函数+构造响应
-├── ontology.py        # CONCEPTS 词库（60~120 条）+ lookup_subject_id()
-├── parse.py           # 槽位抽取（subject_text/subject_id/intent/language/operation/output_type）+ build_fingerprint()
-├── embedding.py       # embed_text()（canonical 主题桶）
-├── decision.py        # decide(query_text, cached_text) → (score, shared, reason)
-├── requirements.txt / Dockerfile / README（不变，仍 nuxt+jieba）
-└── tests/             # Phase-1 验收矩阵 eval（离线 import 纯模块）
+├── semantic.py            # 薄路由层：/embed /rerank /healthz
+├── ontology/
+│   ├── concepts.json      # 本体数据（首批 ≥40 概念）
+│   ├── loader.py          # 读 JSON → 倒排 alias→concept + 规范检查
+│   └── validator.py       # 唯一性/安全断言（import 即校验）
+├── parse.py               # 槽位抽取 + 双路 subject + residual + build_fingerprint
+├── embedding.py           # embed_text（canonical 主题桶）
+├── decision.py            # decide(query, candidate) → (score, shared, reason)
+├── requirements.txt / Dockerfile / README（不变）
+└── tests/
+    ├── eval/              # 权威矩阵数据 fixtures（M/R/B/E）
+    ├── test_ontology.py test_parse.py test_embedding.py test_decision.py test_fingerprint.py
+    └── test_golden.py     # Phase-0 产物，标注 legacy 不进 CI
 ```
 
-关键实现约束：`ontology/parse/embedding/decision` 为**纯函数模块，不 import nuxt**（离线 pytest 可直接 import）；`semantic.py` 顶部 import 它们使路由注册。nuxt 以 `--module semantic.py` 从本目录启动、同目录兄弟模块 import——首步先冒烟验证可行。
+纯逻辑模块不 import nuxt；`semantic.py` 顶部 import 使路由注册。首步冒烟验证 nuxt 同目录兄弟 import；失败回退方案见 §风险。
 
-### ② 本体 `ontology.py`
+### ② 本体 `ontology/`
 
-```python
-# 稳定 ID → canonical + aliases
-CONCEPTS = {
-    "red_black_tree": {
-        "canonical_zh": "红黑树",
-        "canonical_en": "red black tree",
-        "aliases": ["红黑树", "rbtree", "rb tree", "rb-tree",
-                    "red black tree", "red-black tree", "redblacktree"],
-    },
-    "binary_search_tree": {
-        "canonical_zh": "二叉搜索树", "canonical_en": "binary search tree",
-        "aliases": ["二叉搜索树", "二叉查找树", "bst", "binary search tree"],
-    },
-    # ... 覆盖 链表/数组/堆/栈/队列/哈希表/单例/线程池/深拷贝/冒泡/快排/排序/递归/位运算 等 60~120 条
+`concepts.json`（首批 ≥40，覆盖矩阵与常见 CS·DS·算法）：
+
+```json
+{
+  "schema": "v1",
+  "ontology_version": "2026-09-03.1",
+  "concepts": [
+    {"id": "red_black_tree", "canonical_zh": "红黑树", "canonical_en": "red black tree",
+     "aliases": ["红黑树", "rbtree", "rb tree", "rb-tree", "red black tree", "red-black tree", "redblacktree"]},
+    {"id": "binary_search_tree", "canonical_zh": "二叉搜索树", "canonical_en": "binary search tree",
+     "aliases": ["二叉搜索树", "二叉查找树", "bst", "binary search tree"]}
+  ]
 }
 ```
 
-- 匹配顺序：**精确优先、模糊兜底**。英文/缩写用词边界正则（`\brbtree\b`），避免 `RBAC` 命中 `rb` 之类误伤；中文直接子串/整词。
-- 匹配入口为 `extract_subject` 后的 subject 文本；命中返回稳定 ID，未命中返回 None（保留原 subject 文本，不进 canonical/指纹路径）。
-- 别名只做**本概念内归一**，不做跨概念全局替换（RBAC 与 rbtree 分离，各查各的）。
+`validator.py`（导入即断言，失败即报错）：
+- concept id 全局唯一、canonical 字段存在、alias 非空
+- alias 经规范化（NFKC+小写+去空白）后**全局唯一**（`alias_owner_count==1`）
+- 禁止危险单字符英文 alias（排除已建档的语言名、停用词边界词）
+- alias 最长优先匹配；不做字符串包含放行（tree/binary tree 各自是独立概念，仅 ID 相等兼容）
 
-### ③ 解析 `parse.py`（槽位 + 指纹）
+`loader.py`：构建全小写规范化 alias→concept 倒排；`lookup_subject_id(text)` 用**最长 alias 词边界匹配**（latin 用 `\b`/前后非字母数字；中文受控子串），返回最长的命中 concept id，命中多个同长→拒绝（保守）。
 
-每段文本解析为结构化槽位；`parse.py` 同时容纳原上下文/状态/语言/操作检测 helper（`is_context_dependent` / `is_stateful_instruction` / `should_bypass_semantic_cache` / `extract_language` / `extract_operation` 等），使 `/embed` 路由仍能回填 `bypass_cache` / `context_dependent` 字段。
+### ③ 解析 `parse.py`
 
-| 槽位 | 取值 | 规则来源 |
-|---|---|---|
-| `subject_text` | 原文主题 | 现有 SUBJECT_PATTERNS + normalize_subject（保留） |
-| `subject_id` | red_black_tree / … / None | ontology.lookup_subject_id(subject_text) |
-| `intent` | implementation/definition/comparison/operation/reason/troubleshooting/history_query/state_update/unknown | 现有 INTENT_RULES（保留） |
-| `language` | c/cpp/python/java/javascript/go/rust/typescript/csharp/…/None | 现有 LANG_PATTERNS + 补强（见下） |
-| `operation` | insert/delete/traverse/query/add/update/replace/modify/find/None | OPERATION_WORDS 中文词 → 英文 id 映射 |
-| `output_type` | code/explanation/None | 派生：implementation/troubleshooting → code；definition/comparison/reason → explanation；否则 None |
-| `parser_version` | v1 | 元信息 |
+`normalize()`：NFKC、全角转半角、英文小写、统一空格/标点、保留 `c++/c#/.net`。
 
-**语言补强**（方案 §5.4）：`c` 需上下文约束（`c语言` 或 `(?<![a-z0-9+#])c(?![a-z0-9+#])(?=.*(代码|实现|编程))`），防普通字母 c；补 `rust`/`typescript`/`csharp`/`.net`。`c++`、`c#`、`.net` 等符号在早期 NFKC 处理时保留。
+**双路主题抽取**（评审阻断2）：
+- 路径 A（句式）：中英文 SUBJECT_PATTERNS（新增 `使用/编写/给我一个…L 版本…`、`what is/implement/write/build/create X`、`implement X in L`、`L implementation of X` 等）→ subject_text
+- 路径 B（本体直取）：`lookup_subject_id(full_text)` 全句最长匹配
+- 合并：`subject_id = lookup(subject_text) or lookup(full_text)`；均未命中 → subject_id=None（保留 subject_text 供日志，不进指纹）
 
-**指纹**：仅 `subject_id` 命中时计算：
+**意图中英文规则补全**（definition/implementation/comparison/troubleshooting 的 what is/define/implement/write/build/code/compare/vs/error/exception 等），其余规则保留。语言识别按**长模式优先**顺序：`c++/cxx/cpp` → `c#/csharp/.net` → `javascript/node.js` → `typescript` → `java` → `python` → `rust` → `go/golang` → `c`(需上下文词)；`c` 短词仅 `c语言` 或紧跟实现语境才判。操作中英归一：insert/delete/traverse/find/update…（`remove` 视主题与上下文，谨慎）。
 
-```text
-fp = sha256(subject_id | intent | language | operation | output_type)   # None → ""
+**output_type**：implementation/troubleshooting → code；definition/comparison/reason → explanation；operation/unknown → None。
+
+**residual 残差**：取 normalize 后 tokens（jieba）+ latin token 集，减去：subject alias 覆盖词、停用词、intent 命中词、operation 命中词、语言名 → 得 `residual_words`。用于指纹准入与 decision 复核。
+
+**fingerprint_eligible**（保守准入，全真才 True）：
+- subject_id 非空；intent 已知且非 unknown；language 无歧义（最多一个语言命中）
+- `residual_words` 为空（无 线程安全/持久化/重复键/父指针/无递归 等未解析约束）
+- 非 bypass/stateful
+
+**build_fingerprint**：payload 为固定字段顺序的稳定 JSON：
+
+```json
+{"schema":"v1","ontology_version":"2026-09-03.1","parser_version":"v1",
+ "subject_id":"red_black_tree","intent":"implementation","language":"c",
+ "operation":null,"output_type":"code","residual":[]}
 ```
+
+序列化用 `json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",",":"))`，`sha256(utf-8).hexdigest()`。键命名空间 `semfp:v1:`。任何 schema/parser/ontology/词库变更 → payload 中版本字段变化 → 旧指纹自然失效（旧键成孤儿，可后续清理，不影响正确性）。
 
 ### ④ canonical 嵌入 `embedding.py`
 
-`embed_text` 唯一实质改动：主题标记桶原文 → 稳定 ID。
+`embed_text`：若 `subject_id` 命中 → 主题桶用 `SUBJECT:<subject_id>`(3.0)；否则退 `SUBJECT:<subject_text>`(3.0，≈现状)。意图桶/普通词/bigram/模板词权重不变。
+
+### ⑤ decision `decision.py`（严格→宽松，对称）
 
 ```python
-sub_id = parse.lookup_subject_id(subject)   # 由 embedding 内部调 parse 得到
-if sub_id:
-    _add(vec, "SUBJECT:" + sub_id, 3.0)     # 红黑树/rbtree/RB tree 同桶
-else:
-    _add(vec, "SUBJECT:" + subject, 3.0)    # 未命中退回原文（行为≈现状）
+def decide(query, cached):  # 两者皆为 parse 结果
+    # 1. subject_id 双方都有 → 仅相等放行，不等拒 subject_conflict
+    #    任一侧无 subject_id → 保守：仅两侧 normalized subject_text 相等才放行，否则拒
+    # 2. language_sensitive = (任一侧 intent ∈ {implementation,troubleshooting,code_modification,execution})
+    #                         或 任一侧 output_type == "code"
+    #    敏感时语言对称严格：query.lang != cached.lang → 拒 language_conflict
+    #    （None 不是通配：generic==generic 放行；None vs c/cpp 等一律拒）
+    #    非敏感 → 跳过语言
+    # 3. operation 保守：query.op != cached.op → 拒 operation_conflict
+    #    （含 一方 None 一方有值：完整实现 vs 只插入 拒）
+    #    op 同值且非 None → 放行（跳过意图，兼容"X的删除 vs 写X的删除"）
+    #    op 双方 None → 进意图
+    # 4. intent：双方已知 → 相等放行，不等拒 intent_conflict
+    #    一侧 unknown：另一侧代码型 → 拒；另一侧非代码型 → 拒（保守，不进快捷命中）
+    #    两侧 unknown → 仅允许向量低分路径，不可 fp/快捷（此处返回 shared=False 由上层继续向量）
+    # 5. residual 复核（评审阻断1）：query.residual != cached.residual → 拒 constraint_conflict
+    #    （无约束查询 不能复用 带约束候选；反之亦然）
+    # 6. 通过 → 关键词 Jaccard 给分；shared=True, reason="ok"
 ```
 
-意图桶 2.0、普通词 1.0、bigram 0.4、模板词 0 不变。别名措辞与候选共享主题桶 → VSEARCH 余弦抬升。
+`/rerank` 响应追加 reason（只加不删）：`{code, score, shared, reason}`。reason 枚举：`subject_conflict/language_conflict/intent_conflict/operation_conflict/output_conflict/constraint_conflict/unknown_subject/unknown_intent/ok`。
 
-### ⑤ decision `decision.py`（升级 rerank）
+### ⑥ 语义指纹安全落地（评审阻断1/5/6）
 
-```python
-LANGUAGE_SENSITIVE_INTENTS = {"implementation", "troubleshooting", "code_modification", "execution"}
+**存储语义**：`semfp:v1:<fp>` → **候选问题原文**（array 明文，value 为该缓存问题的 query 文本），不是答案。
 
-def decide(query, cached):
-    """query/cached 为 parse 结果；返回 (score, shared, reason)。
-    严格→宽松顺序。"""
-    # 1. subject_id 双方都有且不同 → 拒
-    #    任一 subject_id 为 None → 退回老 _subject_conflict(文本包含判断)
-    # 2. 语言(仅 LANGUAGE_SENSITIVE_INTENTS)：
-    #    - 双方都有且不同 → language_conflict
-    #    - query 无 & cached 有  → language_conflict
-    #    - query 有 & cached 无  → language_conflict
-    #    定义等非敏感意图跳过语言
-    # 3. 操作：双方都有且不同 → operation_conflict；相同 → 放行(跳过意图)
-    # 4. 意图：双方可判定且不同 → intent_conflict；任一方 unknown → 不拒
-    # 5. 输出类型：code vs explanation 且未覆盖 → output_conflict
-    # 6. 通过 → 关键词 Jaccard 给分，reason="ok"
-```
+**CacheQuery 新顺序**：
+1. `/embed` 得 vec + bypass + subject_id + fingerprint + fingerprint_eligible；
+2. `bypass || subject_text==""` → miss（准入同 Phase-0；`subject_id==None` **不禁查**，只是禁 fp——未入词库的主题降级走 VSEARCH+decision 保守路径，避免 KMP 等未建档概念整条被砍）；
+3. `fp 命中`：`GET semfp:v1:<fp>` 得候选问题 cq → `GET <cq>` 得有答案（无则试 VSEARCH）→ **`decide(query_parsed, parse(cq))` 复核** shared 且无残差冲突 → 返回答案，`source=fingerprint`；复核不过 → 记 collision 日志 → 落入 VSEARCH；
+4. VSEARCH Top-K（默认 30，见 §Go）逐候选：阈值 + `decide`（shared + reason）→ 命中返回；拒绝记 reason；
+5. 未命中 → miss。
 
-`/rerank` 响应追加 reason（**只加不删**旧字段）：`{code, score, shared, reason}`。reason 集：`subject_conflict / language_conflict / intent_conflict / operation_conflict / output_conflict / unknown_subject / ok`。
+**CacheWrite 新顺序（幂等、best-effort）**：
+1. `SET <query> <answer>`（answer 事实源）失败 → 直接返回 err，不写后续；
+2. `HSET semcache:<query> <vec>`；
+3. `fp 可写`（eligible 且 enabled）→ `SET semfp:v1:<fp> <query>`（last-write-wins；同 fp 等价候选语义相同，覆盖无害）。任一步失败仅记日志，不级联回滚（缺失向量/指纹只损失该条召回，不损坏其它；符合保守 miss）。
 
-### ⑥ Go 侧（最小，决策不动）
+**更新/删除/TTL/升级**：
+- 同一原问题新答案 → CacheWrite 覆盖（幂等）。
+- 同 fp 多问题 → last-write-wins；因 eligible 需 residual 为空，碰撞仅剩真等价措辞，可接受。
+- 删除：本期无删除 API；fp/向量孤儿键不影响正确性（查询按前缀精确取），后续清理任务处理。
+- TTL：语义缓存维持现状不设（与 Phase-0 一致）。
+- 升级：版本字段入 payload → 新 fp 不同，旧 `semfp:v1:*` 成孤儿；本期不迁移、不改 kvstore 记录格式。
 
-- `config.go`：`SemanticCache.ExactFingerprintEnabled bool`（yaml `semantic_cache.exact_fingerprint_enabled`，默认 true）。
-- `embedResp` 增 `subject_id/fingerprint/language/operation/output_type`；`rerankResp` 增 `reason`（解析但 v1 只透传观测）。
-- `embedText` 返回值收敛为小 meta（vec + bypass + subject + fingerprint + slots），`CacheQuery/CacheWrite` 包内配套。
-- `CacheQuery` 顺序：
-  1. `embedText`；`bypass || subject==""` → miss（原准入不变）；
-  2. `ExactFingerprintEnabled && fp!=""` → `GET semfp:<fp>`，命中直接返回（不走 VSEARCH/阈值）；
-  3. 否则 VSEARCH 循环（decision 门不变，`shared` 语义不变）。
-- `CacheWrite`：现 SET/HSET 之外，若 `fp!="" && enabled` 追加 `SET semfp:<fp> = <answer>`。键前缀 `semfp:`（array 明文，与 Q-A 无冲突）。
-- dev.config.yaml 与 ai-chat-stack 配置各加 `exact_fingerprint_enabled: true`。
+### ⑦ Go 侧改动
 
-## 兼容与数据
+- config.go：`SemanticCache` 增 `ExactFingerprintEnabled bool`（`exact_fingerprint_enabled`）与 `TopK int`（`top_k`，默认 30）。yaml（dev + ai-chat-stack 配置）同步。
+- `embedResp` 增 `subject_id/language/operation/output_type/fingerprint/fingerprint_eligible`；`rerankResp` 增 `reason`。只加不删。
+- `embedText` 返回值收敛为小 meta（vec/bypass/subject/subject_id/fp/eligible/slots），`CacheQuery/CacheWrite` 包内配套。
+- `CacheQuery`：按 §⑥ 顺序；VSEARCH Top-K 用配置（默认 30），逐候选 `GET`+`rerank`（decision）+ reason 判断。
+- 日志（评审 §14 轻量）：`fingerprint_hit / fingerprint_collision / fingerprint_fallback`、decision reason 走包级 `log.*F` 标签，不记用户原文/答案正文；Prometheus 指标延后。
+- `services/tokenizer`（GetTokens）与 server.go 调用点不动。
 
-- /embed、/rerank 为**增字段**变更：旧 Go/旧客户端只读已知字段仍可用；旧缓存条目无 fp → 仅走 VSEARCH（行为=现状），新条目先走 fp。新旧混存无需迁移。
-- Phase-0 `semcache:*/GET 问题原文` 数据结构、`encodeVec` 二进制、kvstore VSEARCH 全部不变。
+## 数据一致性定义（评审阻断6）
+
+| 问题 | 决策 |
+|---|---|
+| 写入顺序 | ① SET answer ② HSET vec ③ SET semfp（answer 失败即停） |
+| 失败回滚 | 无事务；best-effort，缺失索引只损失该条召回，保守 miss 兜底 |
+| 重试幂等 | SET 覆盖幂等 |
+| 事实源 | `<query>` 明文 answer 是唯一事实源；fp/vec 皆引用 |
+| 指纹冲突 | last-write-wins；eligible 限 residual 空使冲突≈真等价 |
+| 删除/TTL/升级 | 本期无删除/无 TTL；升级靠版本命名空间隔离旧键 |
 
 ## 测试与评估
 
-`semantic/tests/` 改造（离线 import 纯模块）：
+semantic/tests 全部离线 import 纯模块（pytest），权威数据放 `tests/eval/`：
 
-1. **验收矩阵**（上表 10 行 + 老案例决策级子集 + 额外负样本）对 `decision(q,c)`：
-   - match 行 `shared=True`；其中 fp 覆盖行断言 `build_fingerprint(q)==build_fingerprint(c)`
-   - reject 行 `shared=False` 且 `reason` == 期望码
-   - bypass 行 `should_bypass(text)==True`
-2. **别名召回**：`embedding` 上断言 `cosine(v("生成一个红黑树"), v("生成一个 rbtree"))` 明显高于阈值下限（证 canonical 桶生效）。
-3. **路由冒烟**（起 semantic:3003 后）：`/embed` 新字段存在、`/rerank` reason 存在、`/healthz` 200。
-4. **Go 编译**：`go build ./...`。
-5. **e2e 子集**（写缓存后跨别名重问命中；C++ 变体拒绝）——脚本/手工均可。
+1. **权威集 ≥120 对**（fixtures，分类见下），对 `decide(q,c)` 断言 shared 与 reason，对 bypass 断言绕过：
+
+   | 类别 | ≥ |
+   |---|---|
+   | 同主题同意图正样本（含 alias/中英改写） | 40 |
+   | 语言冲突负样本 | 20 |
+   | 意图冲突负样本 | 15 |
+   | 操作/范围冲突负样本 | 15 |
+   | 约束/残差冲突负样本 | 15 |
+   | 上下文/状态绕过 | 10 |
+   | 本体边界与缩写误伤（tree/bst/RBAC/Java↔JS/C++↔C） | 15 |
+
+2. **矩阵回归**：验收矩阵 M/R/B/E 全部逐行断言（含 R7/R8 指纹碰撞安全：断言五变体 fp 不同 或 非 eligible，且 decision 互拒）。
+3. **召回**：`embedding` 别名对余弦断言（M1/M2 余弦 > 0.5 级下界）；离线 Recall@K（VSEARCH 不可离线，用向量余弦 top-K 近似）覆盖 M1-M5。
+4. **路由冒烟**：起 :3003 后 /embed 新字段、/rerank reason、/healthz 200。
+5. **Go 编译** `go build ./...`；**e2e**：写缓存后跨别名重问命中（source=fingerprint）、C++ 变体拒绝、带约束五变体互不误命中、semantic 停服降级。
+6. 指标：语言/意图/操作/约束冲突 false hit 全 0；正样本召回 ≥ 90%（权威集内）；Phase-0 已知正确用例决策级不回归。
 
 ## 风险与缓解
 
 | 风险 | 缓解 |
 |---|---|
-| canonical 嵌入扰动既有命中分布 | 验收矩阵 + 老案例"决策级 match/reject 不回归"子集兜底 |
-| 语言严格化牺牲无语言泛化命中（精度换召回） | 以验收矩阵为准；若召回不足，后续加 config 放行口（如仅未知候选语言且查询无语言才放行），本轮不做 |
-| 指纹误命中 | fp 仅含 5 槽位、要求 subject_id 必存在；同槽位不同实质请求概率低；扩展留后 |
-| nuxt 同目录兄弟模块 import 不可用 | 实施首步先冒烟；失败则回退为"单一 semantic.py + 顶层 import 子文件函数"，仍满足离线测试（纯函数模块仍可被 tests import） |
-| 本体词库质量（错别名→错归一） | 词条手工审核；缩写匹配限词边界；低置信不归一、subject_id=None 走保守老路径 |
+| canonical 嵌入扰动既有分布 | 权威集 + Phase-0 已知对"决策级"回归子集 |
+| 语言/操作严格化牺牲召回 | 保守优先（miss 只重调 LLM）；验证集校准在 Phase 4 放宽 |
+| 指纹碰撞 | 保守准入(residual 空)+候选复核+版本隔离；碰撞有日志并可测 |
+| 双路匹配误伤 | alias 全局唯一 + 最长优先 + 边界匹配；E1-E5 回归 |
+| nuxt 兄弟模块 import 不可用 | 首步冒烟；失败回退：纯函数仍独立文件（tests 可直接 import），semantic.py 内 `from .` 改同目录绝对 import 验证 |
+| 解析规则误判英文/未知 | 意图/句式中文案补全 + unknown 保守不进快捷命中；误判只致 miss 不致远命中 |
 
 ## 涉及文件清单
 
 新增：
 
-- `semantic/ontology.py`
-- `semantic/parse.py`
-- `semantic/embedding.py`
-- `semantic/decision.py`
-- `semantic/tests/eval/`（验收矩阵数据 + pytest：`test_decision.py`/`test_ontology.py`/`test_embedding.py`/`test_parse.py`）
+- `semantic/ontology/concepts.json`、`semantic/ontology/loader.py`、`semantic/ontology/validator.py`
+- `semantic/parse.py`、`semantic/embedding.py`、`semantic/decision.py`
+- `semantic/tests/eval/`（矩阵+权威集 fixtures）、`semantic/tests/test_{ontology,parse,embedding,decision,fingerprint}.py`
 
 修改：
 
-- `semantic/semantic.py`（拆薄路由层 + 增字段）
-- `ai-chat-service/pkg/config/config.go`（ExactFingerprintEnabled）
-- `ai-chat-service/chat-server/semcache/semcache.go`（指纹前置 + meta）
-- `ai-chat-service/dev.config.yaml`、`ai-chat-stack/configs/ai-chat-service.yaml`（exact_fingerprint_enabled）
-- `docs/项目文档/04-业务应用.md`（§4.2/§6 语义能力描述更新到 Phase 1）
-- `semantic/tests/`（旧金样标注 legacy）
+- `semantic/semantic.py`（薄路由 + 增字段）
+- `ai-chat-service/pkg/config/config.go`（ExactFingerprintEnabled/TopK）
+- `ai-chat-service/chat-server/semcache/semcache.go`（fp 候选前置 + decision reason + Top-K）
+- `ai-chat-service/dev.config.yaml`、`ai-chat-stack/configs/ai-chat-service.yaml`（exact_fingerprint_enabled/top_k）
+- `docs/项目文档/04-业务应用.md`（§4.2/§6 语义能力更新到 Phase 1）
+- `semantic/tests/test_golden.py`（标注 legacy）
