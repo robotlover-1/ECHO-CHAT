@@ -18,13 +18,15 @@ def _rows():
     """每条三元组 (q,c,exp) 必须依次落在 parse→decide 的真实结果。"""
     bad = []
     for q, c, exp in CASES:
-        shared, reason = decide(parse(q), parse(c))[1:]
+        score, shared, reason = decide(parse(q), parse(c))
         if exp == "match":
-            if not shared:
-                bad.append((q, c, reason))
+            # Go accept 谓词契约（ITEM-1）：shared && reason=="ok" && score>=rerank_threshold(0.25)。
+            # ok 分支 score=canonical 嵌入余弦，等价格等价度；阈值 0.25 见 config。
+            if not (shared and reason == "ok" and score >= 0.25):
+                bad.append((q, c, reason, score))
         else:
-            if shared or reason != exp[1]:
-                bad.append((q, c, reason, exp))
+            if shared or reason != exp[1] or score != 0.0:
+                bad.append((q, c, reason, score, exp))
     return bad
 
 
@@ -32,13 +34,28 @@ def test_total_at_least_120():
     assert len(CASES) >= 120, len(CASES)
 
 
-def test_matrix_rows_all_pass():
+def test_matrix_rows_accept_predicate():
+    """MATRIX 手工权威集断言到 Go 层 accept 谓词，不止 decision shared/reason。"""
     for q, c, exp in MATRIX:
-        shared, reason = decide(parse(q), parse(c))[1:]
+        score, shared, reason = decide(parse(q), parse(c))
         if exp == "match":
-            assert shared, (q, c, reason)
+            assert shared and reason == "ok", (q, c, reason)
+            assert score >= 0.25, (q, c, score)  # 0.25: config rerank_threshold
         else:
             assert shared is False and reason == exp[1], (q, c, reason)
+            assert score == 0.0, (q, c, reason, score)
+
+
+def test_cross_language_hits_clear():
+    """ITEM-1 应命中对（跨语言/跨措辞）——旧 Jaccard≈0 曾在生产误伤，此处显式断言可读。"""
+    hits = [
+        ("红黑树是什么", "what is a red-black tree"),
+        ("用 C 语言生成红黑树", "使用 C 编写 rbtree"),
+        ("用 Python 实现红黑树插入", "implement RB-tree insertion in Python"),
+    ]
+    for q, c in hits:
+        score, _, reason = decide(parse(q), parse(c))
+        assert reason == "ok" and score >= 0.25, (q, c, score)
 
 
 def test_all_cases():

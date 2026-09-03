@@ -1,7 +1,14 @@
-"""决策：subject_id/language/operation/intent/residual 保守对称硬拒，然后给分。"""
-import jieba
-from jieba import analyse
+"""决策：subject_id/language/operation/intent/residual 保守对称硬拒，然后给分。
+
+score 语义（Go 消费）：
+    - ok 分支：canonical 嵌入余弦 = 二者"等价格等价度"（别名经 subject_id 归一共享桶 →
+      跨语言/跨措辞"应命中"对 cosine 高）。Go accept 谓词 shared && reason=="ok"
+      && score >= rerank_threshold（0.25，来自 config）。
+    - reject/unknown 分支：score 一律 0.0。
+注意 import 方向无环：decision → (parse, embedding)；embedding → parse；embedding 不 import decision。
+"""
 from parse import ParsedQuery
+from embedding import embed_text
 
 LANGSENS = {"implementation", "troubleshooting", "code_modification", "execution"}
 
@@ -17,12 +24,9 @@ def _language_sensitive(qp, cp) -> bool:
     return (qp.intent in LANGSENS or cp.intent in LANGSENS
             or qp.output_type == "code" or cp.output_type == "code")
 
-def keyword_score(q, c) -> float:
-    kw1 = set(analyse.extract_tags(q, topK=6))
-    kw2 = set(analyse.extract_tags(c, topK=6))
-    if not (kw1 | kw2):
-        return 1.0
-    return len(kw1 & kw2) / len(kw1 | kw2)
+def _cos(a, b):
+    """两向量点积（embed 已 L2 归一 ⇒ 点积=余弦）。"""
+    return sum(x * y for x, y in zip(a, b))
 
 def decide(qp: ParsedQuery, cp: ParsedQuery):
     # 1 subject
@@ -44,4 +48,6 @@ def decide(qp: ParsedQuery, cp: ParsedQuery):
     # 5 residual 复核
     if qp.residual_words != cp.residual_words:
         return 0.0, False, "constraint_conflict"
-    return keyword_score(qp.raw_text, cp.raw_text), True, "ok"
+    # ok：canonical 嵌入余弦（等价格等价度）。别名经 subject_id 归一共享桶（红黑树/rbtree 同桶），
+    # 故跨语言/跨措辞"应命中"对余弦高；阈值 0.25 来自 Go config rerank_threshold。
+    return _cos(embed_text(qp.raw_text), embed_text(cp.raw_text)), True, "ok"

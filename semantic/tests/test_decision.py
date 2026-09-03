@@ -14,6 +14,28 @@ def test_match_rows():
     assert D("红黑树是什么", "what is a red-black tree")[1] is True
     assert D("红黑树的插入", "写一个红黑树的插入")[1] is True
 
+# Go accept 谓词（ITEM-1：score=canonical 嵌入余弦，非关键词 Jaccard）：
+# shared && reason=="ok" && score>=0.25（rerank_threshold 见 Go config）。
+# cross-language / 跨措辞"应命中"对在旧 Jaccard 下 ≈0，正是本谓词要守住的回退。
+def _ok(q, c):
+    score, shared, reason = D(q, c)
+    assert (shared, reason) == (True, "ok"), (q, c, reason)
+    assert score >= 0.25, (q, c, score)
+    return score
+
+def test_ok_score_is_canonical_cosine_cross_language():
+    assert _ok("红黑树是什么", "what is a red-black tree") > 0.25
+    assert _ok("用 C 语言生成红黑树", "使用 C 编写 rbtree") > 0.25
+    assert _ok("用 Python 实现红黑树插入", "implement RB-tree insertion in Python") > 0.25
+    assert _ok("生成一个红黑树", "生成一个 rbtree") > 0.25
+
+def test_reject_always_zero_score():
+    """reject/unknown 分支 score 恒 0.0（只有 ok 携带等价格等价度）。"""
+    assert D("生成红黑树", "用 C++ 生成红黑树")[0] == 0.0  # language_conflict
+    assert D("红黑树是什么", "实现一个红黑树")[0] == 0.0      # intent_conflict
+    assert D("实现一个二叉搜索树", "实现一棵二叉树")[0] == 0.0  # subject_conflict
+
+
 def test_language_rejections():
     assert D("C 实现红黑树", "C++ 实现 rbtree")[1:] == (False, "language_conflict")
     assert D("生成红黑树", "用 C++ 生成红黑树")[1:] == (False, "language_conflict")
