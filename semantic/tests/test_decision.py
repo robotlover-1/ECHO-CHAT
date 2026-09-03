@@ -22,11 +22,11 @@ def test_language_rejections():
 
 def test_intent_rejections():
     # 隔离 intent 轴：subject 同、语言皆 None、operation 皆 None，仅 intent 不同 → intent_conflict。
-    # （brief 原 probe "实现一个 red-black tree" 的中文包裹把 latin 别名压空格后丢 red_black_tree 属解析层空位，
-    #   "什么 is a… vs 用 Python 实现…" 带 python 触发 language_conflict 早退——两者都无法到达 intent 检查，
-    #   故此处以等价的纯净 probe 保留原断言语义：def≠impl ⇒ intent_conflict。）
+    # R3 修复（test_parse 回归：中文句式内嵌英文宾语"实现一个 red-black tree"经保空格重跑命中本体）
+    # 已让 spec 原 probe 能到达 intent_conflict；此处另保留等价的纯净中文/英文 probe 继续守 intent 轴。
     assert D("红黑树是什么", "实现一个红黑树")[1:] == (False, "intent_conflict")
     assert D("what is a red-black tree", "implement a red-black tree")[1:] == (False, "intent_conflict")
+    assert D("红黑树是什么", "实现一个 red-black tree")[1:] == (False, "intent_conflict")
 
 def test_operation_conservative():
     assert D("Python 实现红黑树插入", "Python 实现 rbtree 删除")[1:] == (False, "operation_conflict")

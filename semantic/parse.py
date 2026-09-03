@@ -76,19 +76,34 @@ def normalize_subject(subject):
     return subject.strip()
 
 
+def _cn_subject_on(config_text):
+    """在中英句式中文句式（SUBJECT_PATTERNS，含中文头配英文宾语）上跑一遍并返回命中的 subject_text。"""
+    for p in SUBJECT_PATTERNS:
+        m = re.match(p, config_text)
+        if m:
+            return normalize_subject(m.group(1).strip())
+    return None
+
+
 def _extract_subject_pair(text):
     """双路主题：先跑原中文单条主题句式、再跑新增中英句式；返回 (subject_text, subject_id)。
 
     subject_text=首个句式命中主题，否则 None；
     subject_id = lookup(subject_text) 或 全体归一化文本兜底 lookup。
+
+    carry-over(R3, Task4 评审)：中文句式内嵌英文宾语（"实现一个 red-black tree"）在把整句
+    压空格/小写后，英文 token 间隙被吞，subject_text 变成 'red-blacktree' 型残缺形态，无法命中
+    本体（本体存 'red black tree'/'red-black tree'）→ subject_id=None → decision 只能给
+    unknown_subject 而非 intent_conflict。修法：当紧凑文本跑中文句式得到的 subject_text 经
+    lookup_subject_id 未命中时，用「保空格」normalized 文本重跑中文句式（英文保留 token 间隙），
+    若命中本体则采用；纯无空格中文不受影响（紧凑=保空格）。仅命中时覆盖，否则维持紧凑结果。
     """
     n = re.sub(r"\s+", "", text.strip().lower())
-    subject_text = None
-    for p in SUBJECT_PATTERNS:
-        m = re.match(p, n)
-        if m:
-            subject_text = normalize_subject(m.group(1).strip())
-            break
+    subject_text = _cn_subject_on(n)
+    if subject_text is not None and lookup_subject_id(subject_text) is None:
+        space_retry = _cn_subject_on(normalize(text))
+        if space_retry is not None and lookup_subject_id(space_retry) is not None:
+            subject_text = space_retry
     if subject_text is None:
         # 英文句式在保留空格的文本上匹配（原中文句式已在上面无空格 n 上跑过）
         for p in SUBJECT_EN_PATTERNS:
@@ -282,18 +297,60 @@ OP_EN = [
 _DELETE_CONTAINER_SUBJECTS = {"array", "linked_list", "vector"}
 
 
+def _subject_erase_forms(subject_id):
+    """本体中 subject 的全部别名 -> erase 串集（紧凑=去掉所有空白并小写；spaced=保留单空格小写）。
+    优先长串（如 二叉搜索树 先于 二叉），避免短别名残留把操作词错误保留/吞并。"""
+    if not subject_id:
+        return []
+    from ontology import load
+    forms = []
+    for c in load().get("concepts", []):
+        if c.get("id") == subject_id:
+            for a in (c.get("aliases") or []):
+                low = unicodedata.normalize("NFKC", a).lower()
+                compact = re.sub(r"\s+", "", low)
+                forms.append(low.strip())
+                forms.append(compact)
+            break
+    seen = set()
+    out = []
+    for f in forms:
+        if f and f not in seen:
+            seen.add(f)
+            out.append(f)
+    return sorted(out, key=len, reverse=True)
+
+
+def _erase_subject(text, subject_id):
+    """把 text 中命中的 subject 别名串删掉，返回 (spacedremain, compactremain)。
+    使"二叉搜索树"里的'搜索'、"插入排序"里的'插入'等藏在概念名内的操作字不再被当作真正的数据操作；
+    真正的操作(如词尾"插入/删除")因不以别名子串存在而保留。"""
+    if not subject_id:
+        spaced = re.sub(r"\s+", " ", text.lower()).strip()
+        return spaced, re.sub(r"\s+", "", spaced)
+    spaced = re.sub(r"\s+", " ", text.lower()).strip()
+    comp = re.sub(r"\s+", "", spaced)
+    for f in _subject_erase_forms(subject_id):
+        spaced = spaced.replace(f, " ")
+        comp = comp.replace(re.sub(r"\s+", "", f), "")
+    return spaced.strip(), comp.strip()
+
+
 def extract_operation(text, subject_id=None):
     """抽取具体操作（返回规范英文 id：insert/delete/traverse/find/update/replace）；
+    先在文面删去 subject 别名（避免概念名里的'搜索/插入'如 二叉搜索树/插入排序 假当操作），
+    再中文子串扫描、英文词界扫描（spaced 保留词隙使 \b 命中）；
     守旧不贪：英文 remove/removal 仅当 subject_id 为容器（array/linked_list/vector）才归 delete。"""
-    n = re.sub(r"\s+", "", text.lower())
+    spaced, n = _erase_subject(text, subject_id)
     # 中文优先（最长条目数序固定，先精确节词亦可）
     terms = sorted(OP_ZH2ID, key=len, reverse=True)
     for op_zh in terms:
         if op_zh in n:
             return OP_ZH2ID[op_zh]
+    # 英文词界扫（在保留空格的文本上，才能让 \binsertion\b 这类命中由整句压空格吞掉的英文操作）
     for op_id, pats in OP_EN:
         for p in pats:
-            if re.search(p, n):
+            if re.search(p, spaced):
                 if op_id == "remove":
                     if subject_id in _DELETE_CONTAINER_SUBJECTS:
                         return "delete"
