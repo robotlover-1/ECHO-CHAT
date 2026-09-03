@@ -312,7 +312,7 @@ curl -s -m 3 -X POST http://127.0.0.1:3003/embed \
 - [ ] **Step 9: 新服务过金样（行为不变的第一证明）**
 
 Run: `python3 semantic/tests/test_golden.py --check http://127.0.0.1:3003`
-Expected: `PASS: 46 cases field-identical (eps=1e-07)`
+Expected: `PASS: 44 cases field-identical (eps=1e-07)`
 
 > 若 `GET /healthz` 不通（nuxt 对 GET 有兼容问题），把该路由 methods 改为 `["GET","POST"]`，并同步把本计划 Task 5 compose healthcheck 的探测改为 POST（urllib.Request 带 data）；/embed /rerank 不受影响。
 
@@ -395,7 +395,7 @@ Expected: `embed=404`、`rerank=404`、`/tokenizer/...` 返回 `code:200` 与 nu
 - [ ] **Step 7: semantic 金样复跑（职责搬家后仍一致）**
 
 Run: `python3 semantic/tests/test_golden.py --check http://127.0.0.1:3003`
-Expected: `PASS: 46 cases field-identical (eps=1e-07)`
+Expected: `PASS: 44 cases field-identical (eps=1e-07)`
 
 - [ ] **Step 8: Commit**
 
