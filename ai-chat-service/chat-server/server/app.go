@@ -112,6 +112,18 @@ func (a *app) streamRawRequest(ctx context.Context, req openai.ChatCompletionReq
 	if err != nil {
 		return nil, err
 	}
+	// deepseek-v4-flash 默认开深度推理（reasoning_content，复杂题会无限推理、content 永不出现）。
+	// 注入 thinking:disabled 关掉推理 → 直接产正式 content（与网页版一致）。
+	// go-openai v1.9.4 没有 thinking 字段，故在序列化后手动注入。
+	var m map[string]interface{}
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil, err
+	}
+	m["thinking"] = map[string]interface{}{"type": "disabled"}
+	body, err = json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
 	u := a.openaiConf.BaseUrl + "/chat/completions"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
