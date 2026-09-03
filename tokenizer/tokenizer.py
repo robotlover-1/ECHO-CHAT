@@ -84,8 +84,14 @@ SUBJECT_PATTERNS = [
     r"^请介绍一下(.+?)[？?]?$",
     r"^实现(?:一个)?(?:简单|简易|完整|基础)?(?:版本的)?(.+?)[。！!?？]?$",
     r"^写(?:一个|出)?(?:简单|简易|完整|基础)?(?:版本的)?(.+?)[。！!?？]?$",
+    r"^生成(?:一个)?(?:简单|简易|完整|基础)?(?:版本的)?(.+?)[。！!?？]?$",
+    r"^构建(?:一个)?(?:简单|简易|完整|基础)?(?:版本的)?(.+?)[。！!?？]?$",
     r"^之前实现过(.+?)吗[？?]?$",
     r"^以前写过(.+?)吗[？?]?$",
+    r"^(.+?)怎么(写|实现)[？?]?$",              # "冒泡排序怎么写/怎么实现" → 冒泡排序
+    r"^怎么(?:写|实现)(.+?)[。！!?？]?$",          # "怎么写冒泡排序" → 冒泡排序
+    r"^(.+?)的(插入|删除|遍历|查询|添加|更新)[。！!?？]?$",  # "红黑树的插入" → 红黑树
+    r"^用.+?(?:写|实现|生成|构建)(.+?)[。！!?？]?$",  # "用Go实现红黑树" → 红黑树（语言另由 extract_language 处理）
 ]
 
 
@@ -183,7 +189,13 @@ def extract_language(text):
 
 
 # 无信息模板词：嵌入权重 0。注意"实现/简单"等是意图/主题词，不在此列（结构化保存）。
-STOP_WORDS = {"一个", "一下", "请问", "帮我", "可以", "简单地", "请", "能否"}
+STOP_WORDS = {
+    "一个", "一下", "请问", "帮我", "可以", "简单地", "请", "能否", "让我", "帮我",
+    # 通用疑问/模板词：无内容信息，去掉避免"怎么减肥 vs 怎么学好英语"这类跨主题误命中
+    "怎么", "如何", "为什么", "为何", "推荐", "哪些", "多少", "怎样", "为啥",
+    "怎么办", "是不是", "有没有", "是否", "什么", "是", "吗", "呢", "吧", "啊",
+    "应该", "需要", "想要", "请问一下", "一下",
+}
 
 
 def _add(vec, s, w):
@@ -222,9 +234,31 @@ def intent_compatible(query_intent, candidate_intent):
     return True
 
 
+OPERATION_WORDS = ["插入", "删除", "遍历", "查询", "添加", "更新", "替换", "修改", "查找"]
+
+
+def extract_operation(text):
+    """抽取具体操作（插入/删除/遍历…）：同主题不同操作（红黑树的插入 vs 红黑树的删除）答案不可复用。"""
+    t = re.sub(r"\s+", "", text.lower())
+    for op in OPERATION_WORDS:
+        if op in t:
+            return op
+    return None
+
+
+def _subject_conflict(qs, cs):
+    """主题冲突：双方都有主题且无"包含/被包含"关系才冲突。
+    数组 vs 数组的实现（写法的实现 剥不掉）→ 兼容；数组 vs 红黑树 → 冲突。"""
+    if not qs or not cs or qs == cs:
+        return False
+    if qs in cs or cs in qs:
+        return False
+    return True
+
+
 def rerank_score(query, cached_query):
     qs, cs = extract_subject(query), extract_subject(cached_query)
-    if qs and cs and qs != cs:
+    if _subject_conflict(qs, cs):
         return 0.0, False  # subject_conflict
     qi, ci = extract_intent(query), extract_intent(cached_query)
     if not intent_compatible(qi, ci):
@@ -232,6 +266,10 @@ def rerank_score(query, cached_query):
     ql, cl = extract_language(query), extract_language(cached_query)
     if ql and cl and ql != cl:
         return 0.0, False  # language_conflict
+    # 操作冲突：同为操作句但操作不同（插入 vs 删除）→ 拒
+    qop, cop = extract_operation(query), extract_operation(cached_query)
+    if qop and cop and qop != cop:
+        return 0.0, False  # operation_conflict
     # 普通词 Jaccard（兜底）
     kw1 = set(analyse.extract_tags(query, topK=6))
     kw2 = set(analyse.extract_tags(cached_query, topK=6))

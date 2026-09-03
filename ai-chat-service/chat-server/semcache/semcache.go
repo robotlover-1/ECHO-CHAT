@@ -26,6 +26,7 @@ type embedResp struct {
 	Code         int       `json:"code"`
 	Embedding    []float64 `json:"embedding"`
 	BypassCache  bool      `json:"bypass_cache"`
+	Subject      string    `json:"subject"`
 	Msg          string    `json:"msg"`
 }
 type rerankResp struct {
@@ -53,26 +54,26 @@ func getClient() *poolClient {
 	return &poolClient{pool: pool, client: client}
 }
 
-func embedText(ctx context.Context, text string) ([]float32, bool, error) {
+func embedText(ctx context.Context, text string) (vec []float32, bypass bool, subject string, err error) {
 	body, _ := json.Marshal(map[string]string{"text": text})
 	resp, err := http.Post(config.GetConfig().DependOn.Tokenizer.Address+"/embed",
 		"application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
 	defer resp.Body.Close()
 	var r embedResp
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
 	if r.Code != 200 || len(r.Embedding) != dim {
-		return nil, false, fmt.Errorf("embed failed: code=%d dim=%d", r.Code, len(r.Embedding))
+		return nil, false, "", fmt.Errorf("embed failed: code=%d dim=%d", r.Code, len(r.Embedding))
 	}
-	vec := make([]float32, dim)
+	vec = make([]float32, dim)
 	for i, v := range r.Embedding {
 		vec[i] = float32(v)
 	}
-	return vec, r.BypassCache, nil
+	return vec, r.BypassCache, r.Subject, nil
 }
 
 func rerank(ctx context.Context, query, cached string) (float64, bool, error) {
@@ -111,12 +112,12 @@ func CacheQuery(ctx context.Context, query string) (string, bool) {
 	if !cnf.SemanticCache.Enabled {
 		return "", false
 	}
-	vec, bypass, err := embedText(ctx, query)
+	vec, bypass, subject, err := embedText(ctx, query)
 	if err != nil {
 		return "", false
 	}
-	if bypass {
-		// 缓存准入：状态修改指令/上下文依赖问题（记住我是工程师、之前/继续…）不查全局缓存
+	if bypass || subject == "" {
+		// 缓存准入（安全收窄）：状态修改/上下文依赖 或 抽不到明确主题（怎么减肥/推荐电影…）→ 不查全局缓存
 		return "", false
 	}
 	binVec := make([]byte, dim*4)
@@ -174,12 +175,12 @@ func CacheWrite(ctx context.Context, query, answer string) error {
 	if !cnf.SemanticCache.Enabled {
 		return nil
 	}
-	vec, bypass, err := embedText(ctx, query)
+	vec, bypass, subject, err := embedText(ctx, query)
 	if err != nil {
 		return err
 	}
-	if bypass {
-		// 缓存准入：状态修改指令/上下文依赖问题不写全局缓存
+	if bypass || subject == "" {
+		// 缓存准入（安全收窄）：状态修改/上下文依赖 或 抽不到明确主题 → 不写全局缓存
 		return nil
 	}
 	if _, err := getClient().Do(ctx, "SET", query, answer); err != nil {
