@@ -3,9 +3,11 @@
 承接 ECHO-CHAT 语义缓存的向量生成与规则校验，与 tokenizer(计 token)解耦。
 纯逻辑模块（parse/decision/models/embedding/ontology）不 import nuxt，py3.8 兼容；服务薄路由在 `semantic.py`。
 
-- `/embed`：返回 **384 维 L2 归一 e5 语义向量**（`multilingual-e5-small` INT8 ONNX，word 向量经 attention-mask 平均池化），
-  语义向量 = `models.encode_query(text)`（写/查对称 query 前缀），另带双路主题/意图/语言/操作/残差/指纹字段（见下）。
-- `/rerank`：保守对称硬拒的 decision(reason)（subject/language/operation/intent/residual 五种 conflict 原因 + ok）。
+- `/embed`：返回 **384 维 L2 归一 e5 语义向量**（`multilingual-e5-small` INT8 ONNX，token 输出经 attention-mask 平均池化 L2），
+  语义向量 = `models.encode_query(text)`（写/查对称加一条 `query:` 前缀，详见 encode_query/encode_passage），另带双路主题/意图/语言/操作/残差/指纹字段（见下）。
+- `/v1/decision`：**纯规则决策**（scoring 已移交 VSEARCH/Go，端点不再产模型分）：`{code, shared, reason, soft}`。同 `/v1/decision/batch`
+  批量逐个 `{query, candidates[]} → {code, results:[{cached_query, shared, reason, soft}]}`，供 Go 一次嵌入后批量复核 VSEARCH 候选题。
+- `/rerank`：**deprecated**——decision 纯规则化后不再产模型分，保守保留返回 `{code, score:0.0, shared, reason, soft}`（score 恒 0.0）供旧兼容。
 - `/healthz`：liveness，进程活着即 `{"status":"ok"}`（不依赖模型加载）。
 - `/readyz`：readiness，模型已载 + warmup 通过 → `{"status":"ok",...model-info}`；否 → `{"status":"error",...}`。
 - `/model-info`：`{code, model, revision, dimension, vector_namespace, export_version}`（供 Go 启动一致性校验，
@@ -25,11 +27,18 @@
 | `fingerprint_eligible` | 保守准入：subject_id 有、intent 非 unknown、非 bypass、无残差 |
 | `parser_version` / `ontology_version` | v1 / 版本号 |
 
-## /rerank 说明（POST /rerank {query, cached_query}）
-- 返回 `{score, shared, reason}`：`shared=true` 语义等价可命中；`shared=false` 为保守硬拒。
-- `reason` 取值：`subject_conflict` / `language_conflict` / `operation_conflict` / `intent_conflict` /
-  `constraint_conflict`（残差不同→未解析约束）/ `unknown_subject` / `unknown_intent`（一侧槽位缺失时的拒因）。
+## /v1/decision[/batch] 说明（POST；Go 一次嵌入后对该批候选纯规则复核，不再逐候选 /rerank）
+- `/v1/decision` 入参 `{query, cached_query}` → `{code, shared, reason, soft}`；`/v1/decision/batch` 入参
+  `{query, candidates:[...]}` → `{code, results:[{cached_query, shared, reason, soft}]}`（go 向量路径一次 HTTP 复核 topK）。
+- `shared=true` 语义等价可共享缓存条目（soft 兜底通道时另需 Go `soft_semantic_fallback`）；`shared=false` 为保守硬拒。
+- `reason` 取值：`ok` / `subject_conflict` / `language_conflict` / `operation_conflict` / `intent_conflict` /
+  `constraint_conflict`（残差不同→未解析约束）/ `unknown_subject` / `unknown_intent`（一侧槽位缺失时的拒因）/
+  `semantic_soft_match`（soft 兜底允许的语义近似匹配）。端点**不产模型分**——scoring(acceptance_threshold=0.6 / min_margin=0.0)
+  由 Go 在 VSEARCH 余弦上本地判定（见 §① 缓存编排）。
 - 主题冲突仅在双方都有 subject_id 且不同才算；None 侧一律保守拒（避免弱匹配）。语言对实现/输出 code 敏感对称比较。
+- `/rerank`（旧名，曾返回 score）已 deprecated：现走同一 `hard_decide`，`score` 恒 0.0，仅供旧客户端兼容。
+- soft 兜底：默认关（`SEMANTIC_SOFT_FALLBACK=0`）；仅在 subject 硬门因"缺 id"拟拒(unknown_subject)时才有机会，
+  且 critical 约束(intersection 差)非空、语言敏感意图下语言不同、operation 不同等情况下不放行。
 
 ## 模型工件（semantic/models/e5s-v1/，gitignore；由 Task1 导出）
 - `model.onnx`：multilingual-e5-small 动态量化 **INT8** ONNX；输入 `input_ids`/`attention_mask`(int64,[1,512])，
@@ -47,7 +56,8 @@ SEMANTIC_INTRA_OP=4 SEMANTIC_INTER_OP=1 \
 ```
 - 启动即 `models.warmup()`（首条固定短文本校验 384 维）；失败仅记日志不退出，`/readyz` 会返回 error。
 - healthz==liveness；readyz 才反映模型就绪（warmup+维度/范数）。
-- 容器：镜像内 `/app/models/e5s-v1` 随镜像打包；requirements 含 `onnxruntime==1.19.2`、`tokenizers==0.15.2`、`numpy==1.24.4`。
+- ORT 线程 env：`SEMANTIC_INTRA_OP`(默认 4) / `SEMANTIC_INTER_OP`(默认 1)，CPUExecutionProvider；`SEMANTIC_SOFT_FALLBACK`(默认关) 控制 decision soft 兜底。sw 内每容器一个副本，`intra_op` ≥ 扩容无争抢（详见 Dockerfile/compose 启动命令）。
+- 容器：`Dockerfile` 基镜像 **`python:3.10-slim`**（非 alpine），把 `semantic.py/parse.py/embedding.py/models.py/decision.py/ontology` 与模型工件 `models/e5s-v1`（INT8 onnx + tokenizer + MANIFEST）整体 ADD 进 `/app`，随镜像打包；requirements 含 `onnxruntime==1.19.2`、`tokenizers==0.15.2`、`numpy==1.24.4`。镜像尺寸相比初版显著缩小（slim + INT8），host 无需预装 transformers/torch。
 
 ## 镜像构建 / 服务编排（本机 registry 默认）
 ```bash
