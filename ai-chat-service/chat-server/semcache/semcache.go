@@ -58,8 +58,8 @@ type rerankResp struct {
 type embedMeta struct {
 	Vec                 []float32
 	Bypass              bool
-	Subject             string // subject_text：空则命中全局缓存意义不大，直接 miss
-	SubjectID           string // subject_id：空不禁查(SubjectID 仅禁 fp 写/查)，但禁写 semfp
+	Subject             string // subject_text：可为空（主题只靠全句本体兜底命中）；空不完全拦，见 CacheQuery/CacheWrite
+	SubjectID           string // subject_id：fp/VSEARCH 的真正钥匙；与 Subject 皆空才整体 miss / 不写 (仅此禁入闸)
 	Fingerprint         string
 	FingerprintEligible bool
 }
@@ -200,8 +200,10 @@ func CacheQuery(ctx context.Context, query string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	if m.Bypass || m.Subject == "" {
-		// 缓存准入（安全收窄）：状态修改/上下文依赖 或 抽不到明确主题（怎么减肥/推荐电影…）→ 不查全局缓存
+	if m.Bypass || (m.Subject == "" && m.SubjectID == "") {
+		// 缓存准入（安全收窄）：状态修改/上下文依赖 → 不查；Subject 与 SubjectID 皆空（通用 how-to 如
+		// “怎么减肥”抽不到本体链路）→ 不查全局缓存。仅 subject_text 为空但 subject_id 非空（主题只靠全句
+		// 本体兜底命中，如“使用 C 编写 rbtree”）不被拦，可继续走指纹/VSEARCH —— 真正钥匙是 subject_id。
 		return "", false
 	}
 	// ① 语义指纹命中判卷（首查快路径中的快路径）：fp → 候选问题 → decision 复核
@@ -283,8 +285,10 @@ func CacheWrite(ctx context.Context, query, answer string) error {
 	if err != nil {
 		return err
 	}
-	if m.Bypass || m.Subject == "" {
-		// 缓存准入（安全收窄）：状态修改/上下文依赖 或 抽不到明确主题 → 不写全局缓存
+	if m.Bypass || (m.Subject == "" && m.SubjectID == "") {
+		// 缓存准入（安全收窄）：状态修改/上下文依赖 → 不写；Subject 与 SubjectID 皆空（通用 how-to 抽不到本体链路）
+		// → 不写全局缓存。仅 subject_text 为空但 subject_id 非空（主题只靠全句本体兜底命中，如“使用 C 编写 rbtree”）
+		// 不被拦，照常写入以便指纹/VSEARCH 命中 —— 真正钥匙是 subject_id。
 		return nil
 	}
 	if _, err := getClient().Do(ctx, "SET", query, answer); err != nil {
