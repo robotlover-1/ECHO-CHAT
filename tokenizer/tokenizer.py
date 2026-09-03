@@ -105,6 +105,7 @@ def extract_subject(text):
 
 
 INTENT_RULES = [
+    ("state_update", [r"记住", r"以后.*回答", r"后面.*会问", r"从现在开始", r"你是一个", r"你是一名", r"扮演", r"我的名字是"]),
     ("history_query", [r"之前.*过.*吗", r"以前.*过.*吗", r"刚才.*过.*吗", r"是否.*过", r"还记得", r"上次", r"前面"]),
     ("implementation", [r"实现", r"写一个", r"写出", r"给.*代码", r"代码示例", r"完整代码"]),
     ("definition", [r"是什么", r"什么是", r"什么意思", r"介绍一下", r"概念", r"定义"]),
@@ -135,6 +136,31 @@ def is_context_dependent(text):
     """依赖当前会话上下文的问题（之前/刚才/继续…）→ 不适合全局语义缓存。"""
     n = re.sub(r"\s+", "", text.lower())
     return any(re.search(p, n) for p in CONTEXT_PATTERNS)
+
+
+# 状态修改指令：会改变会话状态（身份/偏好/记忆/输出规则）→ 不可缓存、不可命中缓存。
+# 这类内容即使 Embedding 再强也会与"无状态问答"混淆（你是一个工程师 vs 你是一个艺术家），
+# 必须在准入层直接绕过。
+STATEFUL_PATTERNS = [
+    # 记忆与偏好
+    r"记住", r"请记得", r"不要忘记", r"以后.*回答", r"后面.*会问", r"接下来.*会问",
+    # 角色与身份设置
+    r"你是一个", r"你是一名", r"你现在是", r"从现在开始", r"扮演", r"作为.*回答", r"假设你是",
+    # 用户信息设置
+    r"我是一个", r"我是一名", r"我的名字是", r"我的职业是", r"我的偏好是",
+    # 输出规则设置
+    r"以后都", r"接下来都", r"后续都", r"回答时要", r"回答不要", r"统一使用",
+]
+
+
+def is_stateful_instruction(text):
+    n = re.sub(r"\s+", "", text.strip().lower())
+    return any(re.search(p, n) for p in STATEFUL_PATTERNS)
+
+
+def should_bypass_semantic_cache(text):
+    """缓存准入：上下文依赖 或 状态修改指令 → 不查不写全局语义缓存。"""
+    return is_context_dependent(text) or is_stateful_instruction(text)
 
 
 LANG_PATTERNS = {
@@ -220,6 +246,7 @@ def get_embedding(req: Request, args: dict):
         return {
             "code": 200,
             "embedding": embed_text(text),
+            "bypass_cache": should_bypass_semantic_cache(text),
             "context_dependent": is_context_dependent(text),
             "intent": extract_intent(text),
             "subject": extract_subject(text),

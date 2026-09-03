@@ -23,10 +23,10 @@ const dim = 256
 const semPrefix = "semcache:"
 
 type embedResp struct {
-	Code              int       `json:"code"`
-	Embedding         []float64 `json:"embedding"`
-	ContextDependent  bool      `json:"context_dependent"`
-	Msg               string    `json:"msg"`
+	Code         int       `json:"code"`
+	Embedding    []float64 `json:"embedding"`
+	BypassCache  bool      `json:"bypass_cache"`
+	Msg          string    `json:"msg"`
 }
 type rerankResp struct {
 	Code   int     `json:"code"`
@@ -72,7 +72,7 @@ func embedText(ctx context.Context, text string) ([]float32, bool, error) {
 	for i, v := range r.Embedding {
 		vec[i] = float32(v)
 	}
-	return vec, r.ContextDependent, nil
+	return vec, r.BypassCache, nil
 }
 
 func rerank(ctx context.Context, query, cached string) (float64, bool, error) {
@@ -111,12 +111,12 @@ func CacheQuery(ctx context.Context, query string) (string, bool) {
 	if !cnf.SemanticCache.Enabled {
 		return "", false
 	}
-	vec, ctxDep, err := embedText(ctx, query)
+	vec, bypass, err := embedText(ctx, query)
 	if err != nil {
 		return "", false
 	}
-	if ctxDep {
-		// 依赖会话上下文的问题（之前/刚才/继续…）不命中全局缓存
+	if bypass {
+		// 缓存准入：状态修改指令/上下文依赖问题（记住我是工程师、之前/继续…）不查全局缓存
 		return "", false
 	}
 	binVec := make([]byte, dim*4)
@@ -174,12 +174,12 @@ func CacheWrite(ctx context.Context, query, answer string) error {
 	if !cnf.SemanticCache.Enabled {
 		return nil
 	}
-	vec, ctxDep, err := embedText(ctx, query)
+	vec, bypass, err := embedText(ctx, query)
 	if err != nil {
 		return err
 	}
-	if ctxDep {
-		// 依赖会话上下文的问题不写全局缓存
+	if bypass {
+		// 缓存准入：状态修改指令/上下文依赖问题不写全局缓存
 		return nil
 	}
 	if _, err := getClient().Do(ctx, "SET", query, answer); err != nil {
