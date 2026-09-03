@@ -132,3 +132,13 @@ tests/test_fullsync_protocol
 /kvstore/benchmarks/data/pipeline_bench/
 /kvstore/artifacts/**
 !/kvstore/artifacts/.gitkeep
+
+# ============================================
+# semantic 模型大文件（gitignore，保留 MANIFEST.json 提交）
+# ============================================
+semantic/models/e5s-v1/*.onnx
+semantic/models/e5s-v1/tokenizer.json
+semantic/models/e5s-v1/config.json
+semantic/models/e5s-v1/special_tokens_map.json
+semantic/models/e5s-v1/onnx-fp32/
+semantic/models/e5s-v1/onnx-api/
