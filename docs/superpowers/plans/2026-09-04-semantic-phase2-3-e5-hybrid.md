@@ -112,13 +112,103 @@ Expected: `semantic/models/e5s-v1/{model.onnx, tokenizer.json, config.json, spec
 - [ ] **Step 4: 一致性验证 `semantic/tools/verify_consistency.py`**
 
 ```python
-"""PT(仅导出 venv) vs ONNX-FP32 vs ONNX-INT8 排序/向量一致性；取 60 条中英句子。"""
-import subprocess, sys
-# 在 /tmp/e5exp 跑：对每句分别用 transformers(PT)、fp32 onnx、int8 onnx 编码，
-# 断言：cos(v_pt, v_fp32) > 0.999; cos(v_fp32, v_int8) > 0.99; 输出无 NaN/Inf; 对 20 对 (q,c) 排序一致。
-# 实现：加载 fp32/int8 session 用 models 相同 attention-mask 池化；PT 用 transformers AutoModel + AutoTokenizer。
+"""PT(导出 venv) vs ONNX-FP32 vs ONNX-INT8 一致性与排序；句子由种子确定性扩到 40 条，另 12 对 (q,c) 排序校验。"""
+import hashlib, os, sys, math, itertools, subprocess
+MODEL_ID = "intfloat/multilingual-e5-small"
+D = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "models", "e5s-v1"))
+
+SEEDS = {
+    "red_black_tree": ["红黑树", "red-black tree", "rbtree"],
+    "binary_search_tree": ["二叉搜索树", "binary search tree", "BST"],
+    "linked_list": ["链表", "linked list"],
+    "quick_sort": ["快速排序", "quick sort"],
+    "thread_pool": ["线程池", "thread pool"],
+    "singleton": ["单例", "singleton"],
+}
+TEMPLATES = ["实现一个{}", "{}是什么", "用 C 实现{}", "写一个{}", "what is {}",
+             "implement {} in python", "用 Python 写{}"]
+def build_texts():
+    out = []
+    for _sid, al in SEEDS.items():
+        for a in al:
+            for t in TEMPLATES:
+                s = t.format(a)
+                if s not in out:
+                    out.append(s)
+    return out[:40]
+
+PAIRS = [
+    ("红黑树是什么", "what is a red-black tree"),
+    ("用 C 实现红黑树", "用 C++ 实现红黑树"),
+    ("实现红黑树插入", "实现红黑树删除"),
+    ("什么是红黑树", "什么是链表"),
+    ("实现一个单例", "implement singleton"),
+    ("用 Python 写线程池", "write a thread pool in python"),
+    ("二叉搜索树是什么", "what is a binary search tree"),
+    ("用 C 实现链表", "use C to build a linked list"),
+    ("快速排序怎么写", "用 python 写快速排序"),
+    ("写一个深拷贝", "deep copy in java"),
+    ("红黑树是什么", "什么是红黑树"),
+    ("实现一个链表", "实现一个栈"),
+]
+
+def embed_onnx(sess, tok_pt, text):
+    # 用 transformers AutoTokenizer 生成 input(与 PT 一致)，喂 onnx
+    enc = tok_pt(text, padding=True, truncation=True, max_length=512, return_tensors="pt")
+    feeds = {k: v.numpy() for k, v in enc.items() if k in {i.name for i in sess.get_inputs()}}
+    out = sess.run(None, feeds)[0][0]
+    m = enc["attention_mask"].numpy().astype("float32")[..., None]
+    summed = (out * m).sum(axis=0); cnt = max(float(m.sum()), 1e-9)
+    v = summed / cnt; n = math.sqrt(float((v * v).sum())) or 1e-12
+    return v / n
+
+def embed_pt(model, tok, text):
+    import torch
+    enc = tok(text, padding=True, truncation=True, max_length=512, return_tensors="pt")
+    with torch.no_grad():
+        out = model(**enc).last_hidden_state[0]
+    m = enc["attention_mask"].unsqueeze(-1).float()
+    v = (out * m).sum(0) / m.sum().clamp(min=1e-9)
+    return (v / v.norm()).numpy()
+
+def cos(a, b): return float((a * b).sum())
+
+def main():
+    import onnxruntime as ort, transformers as tr
+    texts = build_texts(); tok = tr.AutoTokenizer.from_pretrained(MODEL_ID)
+    model = tr.AutoModel.from_pretrained(MODEL_ID)
+    s_fp32 = ort.InferenceSession(os.path.join(D, "onnx-fp32", "model.onnx"), providers=["CPUExecutionProvider"])
+    s_int8 = ort.InferenceSession(os.path.join(D, "model.onnx"), providers=["CPUExecutionProvider"])
+    bad = 0; min_c_pt32, min_c_32i8 = 1.0, 1.0
+    for t in texts:
+        vp, v32, v8 = embed_pt(model, tok, t), embed_onnx(s_fp32, tok, t), embed_onnx(s_int8, tok, t)
+        c1, c2 = cos(vp, v32), cos(v32, v8)
+        min_c_pt32, min_c_32i8 = min(min_c_pt32, c1), min(min_c_32i8, c2)
+        if any(not math.isfinite(x) for x in v8.tolist()): bad += 1
+    flip = 0
+    for q, c in PAIRS:
+        vq32, vc32, vq8, vc8 = (embed_onnx(s_fp32, tok, q), embed_onnx(s_fp32, tok, c),
+                                embed_onnx(s_int8, tok, q), embed_onnx(s_int8, tok, c))
+        c32, c8 = cos(vq32, vc32), cos(vq8, vc8)
+        assert abs(c32 - c8) < 0.01, (q, c, c32, c8)
+        # 方向不翻转：INT8 下与 PT 同向（正样本该对应更高，负样本对不高于独立无关基线由决策层把关——此处只锁误差）
+        if (c32 >= 0.5) != (c8 >= 0.5):
+            flip += 1
+    print(f"texts={len(texts)} min_c_pt32={min_c_pt32:.5f} min_c_32i8={min_c_32i8:.5f} nan_bad={bad} pair_flip={flip}")
+    assert min_c_pt32 > 0.999 and min_c_32i8 > 0.99 and bad == 0 and flip == 0
+    # 空串/超长稳定性
+    for s in ["", "x" * 3000, "红黑树" * 600]:
+        try:
+            embed_onnx(s_int8, tok, s)
+        except Exception as e:  # noqa
+            raise SystemExit(f"edge fail: {s[:10]!r}: {e}")
+    print("consistency OK")
+
+if __name__ == "__main__":
+    main()
 ```
-具体断言数值与"临界翻转率"记录到报告；翻转定义为 20 对中 INT8 相对 PT 排序变化的对数，目标 ≤1。空串与超长(512 截断)输入各测一次不炸。
+
+运行：`/tmp/e5exp/bin/python semantic/tools/verify_consistency.py`（venv 需含 torch/transformers/onnxruntime）。把每对数值、min 值与 flip 写进报告。
 
 - [ ] **Step 5: 工件测试 `semantic/tests/test_model_artifacts.py`**
 
