@@ -56,7 +56,7 @@ dependOn:
     address: "http://127.0.0.1:3002"
 semantic_cache:
   enabled: true
-  threshold: 0.30
+  threshold: 0.35
   rerank_threshold: 0.25
 vectorDB:
   # 访问地址

@@ -126,36 +126,41 @@ func CacheQuery(ctx context.Context, query string) (string, bool) {
 	if !ok || len(arr) < 2 {
 		return "", false
 	}
-	bestKey := fmt.Sprintf("%v", arr[0])
-	score, err := strconv.ParseFloat(fmt.Sprintf("%v", arr[1]), 64)
-	if err != nil {
-		return "", false
+	// VSEARCH 返回扁平数组 (key, score) 交替：遍历 topK，逐个过阈值+读答案+rerank，
+	// 返回第一个真正通过的候选（Top1 被主题冲突拒绝时，Top2 可能是正确结果）
+	for i := 0; i+1 < len(arr); i += 2 {
+		bestKey := fmt.Sprintf("%v", arr[i])
+		score, err := strconv.ParseFloat(fmt.Sprintf("%v", arr[i+1]), 64)
+		if err != nil {
+			continue
+		}
+		if score < float64(cnf.SemanticCache.Threshold) {
+			continue
+		}
+		// bestKey = "semcache:<缓存问题原文>"，剥前缀取缓存问题
+		cachedQ := strings.TrimPrefix(bestKey, semPrefix)
+		if cachedQ == bestKey {
+			continue // 前缀不匹配，忽略（防御）
+		}
+		// 读明文回答（array 引擎），key 就是问题原文
+		answer, err := getClient().Do(ctx, "GET", cachedQ)
+		if err != nil {
+			continue
+		}
+		ans, ok := answer.(string)
+		if !ok {
+			continue
+		}
+		rs, shared, err := rerank(ctx, query, cachedQ)
+		if err != nil {
+			continue
+		}
+		if rs < float64(cnf.SemanticCache.RerankThreshold) || !shared {
+			continue // 主题冲突/关键词不过 → 试下一个候选
+		}
+		return ans, true
 	}
-	if score < float64(cnf.SemanticCache.Threshold) {
-		return "", false
-	}
-	// bestKey = "semcache:<缓存问题原文>"，剥前缀取缓存问题
-	cachedQ := strings.TrimPrefix(bestKey, semPrefix)
-	if cachedQ == bestKey {
-		return "", false // 前缀不匹配，忽略（防御）
-	}
-	// 读明文回答（array 引擎），key 就是问题原文
-	answer, err := getClient().Do(ctx, "GET", cachedQ)
-	if err != nil {
-		return "", false
-	}
-	ans, ok := answer.(string)
-	if !ok {
-		return "", false
-	}
-	rs, shared, err := rerank(ctx, query, cachedQ)
-	if err != nil {
-		return "", false
-	}
-	if rs < float64(cnf.SemanticCache.RerankThreshold) || !shared {
-		return "", false
-	}
-	return ans, true
+	return "", false
 }
 
 // CacheWrite: 嵌入 → SET <问题> <回答>（明文，key=问题原文）+ HSET semcache:<问题> <[dim][vec]>
