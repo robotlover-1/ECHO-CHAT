@@ -87,14 +87,16 @@ def embed_text(text):
 def rerank_score(query, cached_query):
     kw1 = set(analyse.extract_tags(query, topK=6))
     kw2 = set(analyse.extract_tags(cached_query, topK=6))
-    m1 = set(analyse.extract_tags(query, topK=6, allowPOS=('n', 'vn', 'v', 'eng')))
-    m2 = set(analyse.extract_tags(cached_query, topK=6, allowPOS=('n', 'vn', 'v', 'eng')))
-    # 双方都没有可用的名词/动词关键词时也视为共享：
-    # 否则对"红黑树是什么"这类短问题，m1/m2 都为空 → shared=False → 相同问题缓存也永不命中
-    shared = bool(m1 & m2) or (not m1 and not m2)
+    # 主题名词（n/eng）：若双方都有主题名词但毫无交集 → 不同主题，硬拒。
+    # 例："实现一个简易版本的数组" vs "实现一个简单点的红黑树"（数组/版本 vs 黑树）→ 拒绝，
+    # 避免共享"实现/一个/简单"这类功能词导致的误命中。
+    n1 = set(analyse.extract_tags(query, topK=6, allowPOS=('n', 'eng')))
+    n2 = set(analyse.extract_tags(cached_query, topK=6, allowPOS=('n', 'eng')))
+    if n1 and n2 and not (n1 & n2):
+        return 0.0, False
     if not (kw1 | kw2):
         return 1.0, True
-    return len(kw1 & kw2) / len(kw1 | kw2), shared
+    return len(kw1 & kw2) / len(kw1 | kw2), True
 
 @route("/embed", methods=["POST"])
 @use_args({"text": fields.Str(required=True)}, location="json")

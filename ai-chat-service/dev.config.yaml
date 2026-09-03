@@ -56,8 +56,8 @@ dependOn:
     address: "http://127.0.0.1:3002"
 semantic_cache:
   enabled: true
-  threshold: 0.15
-  rerank_threshold: 0.10
+  threshold: 0.30
+  rerank_threshold: 0.25
 vectorDB:
   # 访问地址
   url: "http://lb-4u4r1fk4-1ys6gv3rpmdan420.clb.ap-guangzhou.tencentclb.com:60000"
