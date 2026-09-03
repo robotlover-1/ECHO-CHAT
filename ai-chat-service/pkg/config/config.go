@@ -67,9 +67,11 @@ type Config struct {
 		IdleConnTimeout    int
 	}
 	SemanticCache struct {
-		Enabled         bool    `mapstructure:"enabled"`
-		Threshold       float32 `mapstructure:"threshold"`
-		RerankThreshold float32 `mapstructure:"rerank_threshold"`
+		Enabled                 bool    `mapstructure:"enabled"`
+		Threshold               float32 `mapstructure:"threshold"`
+		RerankThreshold         float32 `mapstructure:"rerank_threshold"`
+		ExactFingerprintEnabled bool    `mapstructure:"exact_fingerprint_enabled"`
+		TopK                    int     `mapstructure:"top_k"`
 	} `mapstructure:"semantic_cache"`
 }
 

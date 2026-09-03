@@ -56,6 +56,12 @@ dependOn:
     address: "http://tokenizer:3002"
   semantic:
     address: "http://semantic:3003"
+semantic_cache:
+  enabled: true
+  threshold: 0.35
+  rerank_threshold: 0.25
+  exact_fingerprint_enabled: true
+  top_k: 30
 vectorDB:
   # 访问地址
   url: "http://lb-4u4r1fk4-1ys6gv3rpmdan420.clb.ap-guangzhou.tencentclb.com:60000"
