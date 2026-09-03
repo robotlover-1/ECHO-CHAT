@@ -142,3 +142,5 @@ semantic/models/e5s-v1/config.json
 semantic/models/e5s-v1/special_tokens_map.json
 semantic/models/e5s-v1/onnx-fp32/
 semantic/models/e5s-v1/onnx-api/
+semantic/tools/.cal_cache.json
+semantic/tools/cal_thresholds.json
