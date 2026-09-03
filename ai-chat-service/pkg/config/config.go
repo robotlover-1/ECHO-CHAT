@@ -68,10 +68,29 @@ type Config struct {
 	}
 	SemanticCache struct {
 		Enabled                 bool    `mapstructure:"enabled"`
+		// Deprecated: Phase-1 阈值,仅兼容读取,不再参与新(e5/批决策)链路。
 		Threshold               float32 `mapstructure:"threshold"`
+		// Deprecated: Phase-1 rerank 阈值,仅兼容读取,不再参与新链路。/rerank 已废弃且 score 恒 0。
 		RerankThreshold         float32 `mapstructure:"rerank_threshold"`
 		ExactFingerprintEnabled bool    `mapstructure:"exact_fingerprint_enabled"`
 		TopK                    int     `mapstructure:"top_k"`
+
+		// e5 向量命名空间与一致性(e5s:v1)。
+		Dimension         int    `mapstructure:"dimension"`          // 384
+		VectorNamespace   string `mapstructure:"vector_namespace"`   // "semd:e5s:v1:"
+		EmbeddingModel    string `mapstructure:"embedding_model"`    // "intfloat/multilingual-e5-small"
+		EmbeddingRevision string `mapstructure:"embedding_revision"` // 固定 commit SHA
+		ExportVersion     string `mapstructure:"export_version"`     // "onnx-int8-v1"
+
+		// 检索阈值:acceptance_threshold + min_margin(TrimFlow 靠 VSEARCH Top-K)。
+		AcceptanceThreshold  float32 `mapstructure:"acceptance_threshold"`
+		MinMargin            float32 `mapstructure:"min_margin"`
+		SoftSemanticFallback bool    `mapstructure:"soft_semantic_fallback"` // soft 通道兜底,默认 false
+
+		// 灰度读写模式与异步回填。
+		VectorReadMode  string `mapstructure:"vector_read_mode"`  // "new_only" | "dual_read"
+		VectorWriteMode string `mapstructure:"vector_write_mode"` // "new_only" | "dual_write"
+		AsyncBackfill   bool   `mapstructure:"async_backfill"`    // 默认 true
 	} `mapstructure:"semantic_cache"`
 }
 
