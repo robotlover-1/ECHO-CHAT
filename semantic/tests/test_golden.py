@@ -1,3 +1,6 @@
+# LEGACY (Phase-0 产物)：canonical 嵌入(FN)Phase-1 有意改变 /embed 输出，本文件不再作 CI 门。
+# 权威回归迁移到 tests/ 的 test_parse/test_decision/test_fingerprint/test_embedding + tests/eval。
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """semantic 服务与改造前 tokenizer 的字段级差分金样工具。
