@@ -13,10 +13,22 @@
 Task 3 才接入 residual_words / fingerprint / fingerprint_eligible；本任务 parse()
 对这三者一律置空/False。
 """
+try:  # py3.8 兼容：'str | None' 要到 3.10，故用 typing.Optional
+    from typing import Optional  # noqa: F401
+except ImportError:  # pragma: no cover
+    pass
 from dataclasses import dataclass
+import hashlib
+import json
 import re
 import unicodedata
 import jieba  # noqa: F401  —— residual 词面统计在 Task3 使用，此处保留 import
+
+# 约束/描述性多音节词注册进 jieba，避免被拆成"线程/安全"而丢失"未解析约束"残差语义。
+# 只 add_word 不改写停用表，幂等且仅影响这些词本身的切分原子性（模块只读语义仍纯逻辑）。
+for _phrase in ("线程安全", "持久化", "持久型", "重复键", "父指针", "无递归", "关联数组"):
+    if _phrase and _phrase not in jieba.dt.FREQ:
+        jieba.add_word(_phrase, freq=50000)
 
 from ontology import lookup_subject_id, ONTOLOGY_VERSION
 
@@ -196,6 +208,28 @@ LANG_PATTERNS = [
 # `c` 单独特殊：仅命中"c语言"或紧跟实现语境才判（去空白后匹配，"使用 C 编写 rbtree"）。
 _C_IMPL_CTX = re.compile(r"(?<![a-z0-9+#])c(?![a-z0-9+#])(?=.*(实现|编写|生成|写|编程|代码|implementation))")
 
+# carry-over(Task3评审)：英文尾式语言 "implement RB-tree insertion in Python / write X in Go"，
+# 压缩后 in+lang 粘连丢失词界，故在保留空格的小写文本上用词界匹配（小写 text 预处理）。
+_EN_IN_LANG = re.compile(r"\bin\s+(python|py|java|javascript|typescript|go|golang|rust|c\+\+|cpp|ruby|php|swift|kotlin|c#|csharp)\b", re.IGNORECASE)
+
+
+def normalize_lang_tag(word):
+    """英文尾式 ' in <lang>' 的语言词 → LANG_PATTERNS 规范 id。"""
+    w = word.lower()
+    for canon, tags in (
+        ("cpp", {"c++", "cpp"}),
+        ("csharp", {"c#", "csharp"}),
+        ("javascript", {"javascript", "js"}),
+        ("node", {"node.js", "nodejs", "node"}),
+        ("typescript", {"typescript", "ts"}),
+        ("python", {"python", "py"}),
+        ("golang", {"go", "golang"}),
+    ):
+        if w in tags:
+            return canon
+    # go/golang 已在上方 go 命中；其余原生直接用小写作为 id
+    return w
+
 
 def extract_language(text):
     """抽取实现目标语言：cpp/csharp/dotnet/javascript/node/typescript/java/python/rust/golang/go/c；
@@ -207,6 +241,10 @@ def extract_language(text):
             hits.add(lang)
     if "c语言" in n or _C_IMPL_CTX.search(n):
         hits.add("c")
+    # carry-over：英文尾式 "… in python/java/go…"（压缩后 inpython 粘连，须在带空格文本上补判）
+    in_lang = _EN_IN_LANG.search(text)
+    if in_lang:
+        hits.add(normalize_lang_tag(in_lang.group(1)))
     if len(hits) == 1:
         return next(iter(hits))
     return None
@@ -264,6 +302,114 @@ def extract_operation(text, subject_id=None):
     return None
 
 
+# ================= Task 3：residual 残差 + fingerprint_eligible + 版本化指纹 =================
+# 模板/句式词白名单：这些词只贡献 content（嵌入用），不构成"未解析约束"（不阻塞 eligible）。
+# 首列中文为 brief 给定集；另补少量英文高停用词，使"what is a red-black tree"式英文句
+# 残差为空 → definition/implementation 英文句可被真实地归并可缓（而非 None==None 弱通过）。
+_RESIDUAL_WHITELIST = {
+    "的", "个", "一个", "一下", "请", "帮我", "怎么", "如何", "什么",
+    "是", "吗", "呢", "实现", "生成", "编写", "写", "使用", "用",
+    "语言", "代码", "树", "节点", "中", "里", "进行",
+    # —— 英文功能词（低信息，仅词面占用，不含义）——
+    "a", "an", "the", "is", "are", "was", "were", "do", "does", "what",
+    "how", "why", "of", "in", "to", "for", "and", "or", "it", "its",
+    "my", "please", "write", "make", "show", "give", "create", "that", "this",
+}
+
+# residual = 内容 token 中未被以下任一消费的：
+#   停用词 / 白名单 / 命中语言的别名 / 中文操作词 / 英文操作词 / subject alias 组成词
+LANG_TERMS = {"python", "py", "java", "javascript", "js", "typescript", "ts",
+              "go", "golang", "rust", "c", "c++", "cpp", "cxx", "c#", "csharp",
+              ".net", "node.js", "nodejs"}
+OP_TERMS_ZH = set(OP_ZH2ID.keys())            # 中文操作词（Task 2 定义）
+OP_TERMS_EN = {"insert", "insertion", "delete", "deletion", "removal", "remove", "traverse",
+               "traversal", "find", "search", "lookup", "update", "modify", "modify",
+               "replace", "add", "implement", "implementation", "writing", "written"}
+
+
+def _tokenize_words(text):
+    """jieba 分词 → 去空白 token 集；TextRank 无关，纯词面集合。"""
+    return set(w for w in jieba.cut(text) if w.strip() and not w.isspace())
+
+
+def _concept_aliases_for(subject_id):
+    """当前本体中 subject 的全部别名（小写化去空白）。"""
+    from ontology import load
+    if not subject_id:
+        return []
+    aliases = []
+    for c in load().get("concepts", []):
+        if c.get("id") == subject_id:
+            aliases = c.get("aliases") or []
+            break
+    norm = []
+    for a in aliases:
+        norm.append(a.lower().replace(" ", "").replace("-", ""))
+    return norm
+
+
+def _is_alias_piece(word, subject_id):
+    """word 是否为 subject alias 的组成词：
+    等价于 alias 整段被 word 覆盖（word 含 alias）或 word 是 alias 的子串（如 '红黑' / 'tree' 拆段）。"""
+    w = word.lower().strip()
+    if not w or not subject_id:
+        return False
+    try:
+        return any(w in al or al in w for al in _concept_aliases_for(subject_id))
+    except Exception:
+        return False
+
+
+def _residual_words(_qp):
+    """未被消费的内容词 → frozenset。空 = 无未解析约束 => eligible 前提之一。"""
+    toks = _tokenize_words(_qp.raw_text)
+    keep = set()
+    for w in toks:
+        wl = w.lower().strip()
+        if not wl:
+            continue
+        if not re.search(r"[0-9A-Za-z一-鿿]", w):  # 纯标点/分隔 token 无内容信息
+            continue
+        if w in STOP_WORDS or w in _RESIDUAL_WHITELIST:
+            continue
+        if (wl in LANG_TERMS or wl in OP_TERMS_EN or w in OP_TERMS_ZH):
+            continue
+        if _is_alias_piece(w, _qp.subject_id):
+            continue
+        keep.add(w)
+    return frozenset(keep)
+
+
+def _fingerprint_eligible(qp) -> bool:
+    return (bool(qp.subject_id)
+            and qp.intent not in ("unknown",)
+            and not qp.bypass_cache
+            and not qp.context_dependent
+            and not qp.stateful
+            and not _residual_words(qp))
+
+
+def build_fingerprint(qp):
+    """保守准入 + 版本化指纹：格式 sha256(json sort_keys, separators=(',',':'), ensure_ascii=False)。
+    意图/语言/操作/主题任一变（do 时清残差归并、跨主题不同指纹）；同措辞即便表达不同 →
+    （subject,intent,language,operation,output_type,residual=[] 全同）→ 同指纹。"""
+    if not _fingerprint_eligible(qp):
+        return None
+    payload = {
+        "schema": "v1",
+        "parser_version": qp.parser_version,
+        "ontology_version": qp.ontology_version,
+        "subject_id": qp.subject_id,
+        "intent": qp.intent,
+        "language": qp.language,
+        "operation": qp.operation,
+        "output_type": qp.output_type,
+        "residual": sorted(qp.residual_words),
+    }
+    s = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
 def normalize(text):
     """归一化问句：NFKC 统一、小写、c++/c#/.net/node.js 符号占位保护、统一空白。"""
     s = unicodedata.normalize("NFKC", text)
@@ -288,16 +434,16 @@ class ParsedQuery:
     language: "Optional[str]"
     operation: "Optional[str]"
     output_type: "Optional[str]"
-    residual_words: "frozenset"
-    context_dependent: bool
-    stateful: bool
-    bypass_cache: bool
-    fingerprint: object
-    fingerprint_eligible: bool
-    parser_version: str
-    ontology_version: str
+    residual_words: "frozenset" = frozenset()
+    context_dependent: bool = False
+    stateful: bool = False
+    bypass_cache: bool = False
+    fingerprint: "Optional[str]" = None
+    fingerprint_eligible: bool = False
+    parser_version: str = "v1"
+    ontology_version: str = ONTOLOGY_VERSION
     def __post_init__(self):
-        # residual_words 恒为可散列集合；fingerprint 本任务应已是 None
+        # residual_words 恒为可散列集合（容错 mutable 默认入参的调用方）
         object.__setattr__(self, "residual_words", frozenset(self.residual_words))
 
 
@@ -312,10 +458,13 @@ def output_type_for(intent):
 
 def parse(text):
     """槽位抽取主入口：normalize → 双路 subject → intent/language/operation → output_type
-    → context/stateful/bypass（对原文本）→ 返回 ParsedQuery。
+    → context/stateful/bypass（对原文本）→ residual → fingerprint_eligible → build_fingerprint。
 
-    residual_words/fingerprint/fingerprint_eligible 本任务先置空（Task 3 补）。
+    构造后临时算好各约束字段，再用 dataclasses.replace 落到 frozen 结构。
+    residual 面统计针对原文本（含空格，保证 latin 别名可整体作为 token 消解）。
     """
+    from dataclasses import replace
+
     raw = text if isinstance(text, str) else str(text)
     normalized_text = normalize(raw)
     raw_lower = raw.strip()
@@ -326,7 +475,7 @@ def parse(text):
     context_dependent = is_context_dependent(raw_lower)
     stateful = is_stateful_instruction(raw_lower)
 
-    return ParsedQuery(
+    base = ParsedQuery(
         raw_text=raw,
         normalized_text=normalized_text,
         subject_text=subject_text,
@@ -335,12 +484,15 @@ def parse(text):
         language=language,
         operation=operation,
         output_type=output_type_for(intent),
-        residual_words=frozenset(),
         context_dependent=context_dependent,
         stateful=stateful,
         bypass_cache=context_dependent or stateful,
-        fingerprint=None,          # Task 3 接入语义指纹
-        fingerprint_eligible=False,  # Task 3 计算
-        parser_version=PARSER_VERSION,
-        ontology_version=ONTOLOGY_VERSION,
     )
+    residual = _residual_words(base)
+    eligible = _fingerprint_eligible(base)  # 内部复算 residual，但二者一致（residual 只依赖槽位+原文）
+    # build_fingerprint 需先看到 residual/fingerprint_eligible（payload 用 residual）
+    with_residual = replace(base, residual_words=residual,
+                           fingerprint_eligible=eligible,
+                           fingerprint=None)
+    fp = build_fingerprint(with_residual)
+    return replace(with_residual, fingerprint=fp)
