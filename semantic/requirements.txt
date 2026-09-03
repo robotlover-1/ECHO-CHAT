@@ -1,2 +1,5 @@
 nuxt==0.2.15
 jieba==0.42.1
+numpy==1.24.4
+onnxruntime==1.19.2
+tokenizers==0.15.2
