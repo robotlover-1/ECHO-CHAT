@@ -195,86 +195,22 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 		s.log.Error(err)
 		return err
 	}
-	// deepseek-v4-flash 是推理模型：复杂问题可能把答案全放 reasoning_content、content 为空，
-	// go-openai 的 stream 会丢弃 reasoning_content。改用原始 SSE 解析，content 为空时用 reasoning_content 兜底。
-	req.Stream = true
-	httpResp, err := app.streamRawRequest(stream.Context(), req)
-	if err != nil {
-		s.busMetrics.ErrQuestionsTotalCounter.Inc()
-		s.log.Error(err)
-		return err
+	// deepseek-v4-flash 偶发整轮只推理不出 content（content 为空）；重试一次提高成功概率。
+	// 只展示正式 content，不把推理过程当答案。
+	var completionContent, resultID, lastFinish string
+	for attempt := 0; attempt < 2 && completionContent == ""; attempt++ {
+		if attempt > 0 {
+			s.log.InfoF("retry LLM: previous pass produced no content")
+		}
+		content, rid, fin, serr := app.streamLLMContent(stream.Context(), stream, req)
+		if serr != nil {
+			s.busMetrics.ErrQuestionsTotalCounter.Inc()
+			s.log.Error(serr)
+			return serr
+		}
+		completionContent, resultID, lastFinish = content, rid, fin
 	}
-	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
-		s.log.ErrorF("llm stream status=%d body=%s", httpResp.StatusCode, string(body))
-		s.busMetrics.ErrQuestionsTotalCounter.Inc()
-		return fmt.Errorf("llm stream status=%d", httpResp.StatusCode)
-	}
-	scanner := bufio.NewScanner(httpResp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	completionContent := ""
-	resultID := ""
-	lastFinish := "" // 记录最后 finish_reason，length=被截断
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "[DONE]" {
-			break
-		}
-		var chunk struct {
-			ID      string `json:"id"`
-			Choices []struct {
-				Delta struct {
-					Content          string `json:"content"`
-					ReasoningContent string `json:"reasoning_content"`
-				} `json:"delta"`
-				FinishReason string `json:"finish_reason"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
-		if len(chunk.Choices) == 0 {
-			continue
-		}
-		if resultID == "" {
-			resultID = chunk.ID
-		}
-		delta := chunk.Choices[0].Delta
-		text := delta.Content // 只把正式 content 当答案；reasoning_content 是思考过程，不作为答案显示
-		fin := chunk.Choices[0].FinishReason
-		lastFinish = fin
-		if text == "" {
-			// 纯推理 chunk（无内容且无结束信号）：跳过，不向用户展示思考过程
-			if fin == "" {
-				continue
-			}
-			// 结束 chunk（stop/length）：空内容但带结束信号，发给前端收尾
-			res := app.buildChatCompletionStreamResponse(resultID, "", fin)
-			res.Source = "llm"
-			if err := stream.Send(res); err != nil {
-				s.log.Error(err)
-				return err
-			}
-			continue
-		}
-		completionContent += text
-		res := app.buildChatCompletionStreamResponse(resultID, text, "")
-		res.Source = "llm" // 公有大模型回答
-		if err := stream.Send(res); err != nil {
-			s.log.Error(err)
-			return err
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		s.log.Error(err)
-		return err
-	}
-	// 模型只在推理、从未产出正式 content → 给明确提示（不把思考过程当答案）
+	// 收尾：空内容给兜底提示；length 给截断提示；正常发 stop 收尾包
 	if completionContent == "" {
 		notice := "⚠ 模型未生成正式回答（可能在深度推理中），请重试一次或换个问法"
 		res := app.buildChatCompletionStreamResponse(resultID, notice, "stop")
@@ -284,11 +220,16 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 			return err
 		}
 		lastFinish = "no_content"
-	}
-	// 回答被截断(length)时补一句明确提示，避免"戛然而止"误以为是 bug
-	if lastFinish == "length" {
+	} else if lastFinish == "length" {
 		notice := "\n\n⚠ 回答因长度限制被截断，请继续提问或换一种问法"
 		res := app.buildChatCompletionStreamResponse(resultID, notice, "stop")
+		res.Source = "llm"
+		if err := stream.Send(res); err != nil {
+			s.log.Error(err)
+			return err
+		}
+	} else {
+		res := app.buildChatCompletionStreamResponse(resultID, "", "stop")
 		res.Source = "llm"
 		if err := stream.Send(res); err != nil {
 			s.log.Error(err)
@@ -362,4 +303,72 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 		}
 	}()
 	return nil
+}
+
+// streamLLMContent 发起一次原始 SSE 流式请求，把正式 content 逐块发给客户端。
+// 不展示 reasoning_content（思考过程）；只返回累积 content、resultID、最后 finish_reason。
+// 收尾（stop/截断提示/兜底）由调用方处理，以便 content 为空时可整体重试。
+func (a *app) streamLLMContent(ctx context.Context, stream proto.Chat_ChatCompletionStreamServer, req openai.ChatCompletionRequest) (string, string, string, error) {
+	req.Stream = true
+	httpResp, err := a.streamRawRequest(ctx, req)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
+		return "", "", "", fmt.Errorf("llm stream status=%d body=%s", httpResp.StatusCode, string(body))
+	}
+	scanner := bufio.NewScanner(httpResp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	content := ""
+	resultID := ""
+	lastFinish := ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			break
+		}
+		var chunk struct {
+			ID      string `json:"id"`
+			Choices []struct {
+				Delta struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		if resultID == "" {
+			resultID = chunk.ID
+		}
+		delta := chunk.Choices[0].Delta
+		text := delta.Content // 只把正式 content 当答案；reasoning_content 是思考过程，不作为答案显示
+		fin := chunk.Choices[0].FinishReason
+		if fin != "" {
+			lastFinish = fin
+		}
+		if text == "" {
+			continue // 纯推理 chunk：跳过
+		}
+		content += text
+		res := a.withSource(a.buildChatCompletionStreamResponse(resultID, text, ""), "llm")
+		if err := stream.Send(res); err != nil {
+			return "", "", "", err
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", "", "", err
+	}
+	return content, resultID, lastFinish, nil
 }
