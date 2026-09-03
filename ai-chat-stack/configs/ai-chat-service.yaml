@@ -54,6 +54,8 @@ dependOn:
     accessToken: "ang1chubdev1ozhome256487d22sapguuv1ozhom"
   tokenizer:
     address: "http://tokenizer:3002"
+  semantic:
+    address: "http://semantic:3003"
 vectorDB:
   # 访问地址
   url: "http://lb-4u4r1fk4-1ys6gv3rpmdan420.clb.ap-guangzhou.tencentclb.com:60000"

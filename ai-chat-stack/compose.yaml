@@ -12,6 +12,24 @@ services:
         parallelism: 2
         order: start-first
     command: ["sh","-c","nuxt --port 3002 --module tokenizer.py --workers 2"]
+  semantic:
+    image: ${SEMANTIC_IMAGE:-192.168.233.128:5000/2404/semantic:1.0.0}
+    environment:
+      PORT: 3003
+    deploy:
+      mode: replicated
+      replicas: 2
+      endpoint_mode: vip
+      update_config:
+        parallelism: 2
+        order: start-first
+    command: ["sh","-c","nuxt --port 3003 --module semantic.py --workers 2"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:3003/healthz', timeout=2).status==200 else 1)"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+      start_period: 5s
   keywords:
     image: 192.168.239.161:5000/2404/keywords-filter:1.0.0
     deploy:
