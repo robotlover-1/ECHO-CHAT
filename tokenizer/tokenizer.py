@@ -73,38 +73,91 @@ def _hash_bucket(s, dim):
         h = (h * 16777619) & 0xFFFFFFFF
     return h % dim
 
-# ---------------- 问句主题抽取（不依赖 jieba 词性） ----------------
-# "X是什么/什么是X"等定义句：直接把主语提出来，作为主题判别的可靠依据。
+# ============ 问句结构化抽取：主题 / 意图 / 上下文依赖 / 语言 ============
+# 不依赖 jieba 词性，用句式规则可靠提取，供嵌入加权与 rerank 硬拒使用。
+
 SUBJECT_PATTERNS = [
     r"^什么是(.+?)[？?]?$",
     r"^(.+?)是什么[？?]?$",
     r"^(.+)指的是什么[？?]?$",
     r"^(.+)是什么意思[？?]?$",
     r"^请介绍一下(.+?)[？?]?$",
+    r"^实现(?:一个)?(?:简单|简易|完整|基础)?(?:版本的)?(.+?)[。！!?？]?$",
+    r"^写(?:一个|出)?(?:简单|简易|完整|基础)?(?:版本的)?(.+?)[。！!?？]?$",
+    r"^之前实现过(.+?)吗[？?]?$",
+    r"^以前写过(.+?)吗[？?]?$",
 ]
-SUBJECT_PREFIXES = ["请问", "简单说一下", "简单介绍一下"]
+
+
+def normalize_subject(subject):
+    subject = re.sub(r"^(一个|简单的|简易的|完整的|基础的|版本的)+", "", subject)
+    return subject.strip()
 
 
 def extract_subject(text):
-    """抽取定义类问句的主题，如 红黑树是什么/什么是红黑树 → 红黑树；非定义句返回 None。"""
+    """抽问句主题：链表是什么/实现一个简易版本的链表 → 链表；抽不到返回 None。"""
     t = re.sub(r"\s+", "", text.strip().lower())
     for p in SUBJECT_PATTERNS:
         m = re.match(p, t)
         if m:
-            s = m.group(1).strip()
-            for pre in SUBJECT_PREFIXES:
-                if s.startswith(pre):
-                    s = s[len(pre):]
-            return s
+            return normalize_subject(m.group(1).strip())
     return None
 
 
-# 模板/功能词：在嵌入中权重为 0，避免"是什么/怎么/实现"制造虚假相似度
-STOP_WORDS = {"什么", "是", "是什么", "怎么", "如何", "一个", "一下", "介绍", "简单", "实现"}
+INTENT_RULES = [
+    ("history_query", [r"之前.*过.*吗", r"以前.*过.*吗", r"刚才.*过.*吗", r"是否.*过", r"还记得", r"上次", r"前面"]),
+    ("implementation", [r"实现", r"写一个", r"写出", r"给.*代码", r"代码示例", r"完整代码"]),
+    ("definition", [r"是什么", r"什么是", r"什么意思", r"介绍一下", r"概念", r"定义"]),
+    ("comparison", [r"区别", r"差异", r"对比", r"哪个好"]),
+    ("reason", [r"为什么", r"原因", r"为何"]),
+    ("operation", [r"删除", r"插入", r"添加", r"遍历", r"查询", r"怎么(增|删|改|查|插)"]),
+    ("troubleshooting", [r"报错", r"错误", r"异常", r"失败", r"怎么解决", r"无法"]),
+]
 
 
-def token_weight(token):
-    return 0.0 if token in STOP_WORDS else 1.0
+def extract_intent(text):
+    """规则型意图分类：history_query/implementation/definition/comparison/reason/operation/troubleshooting/unknown。"""
+    n = re.sub(r"\s+", "", text.lower())
+    for intent, pats in INTENT_RULES:
+        for p in pats:
+            if re.search(p, n):
+                return intent
+    return "unknown"
+
+
+CONTEXT_PATTERNS = [
+    r"之前", r"刚才", r"前面", r"上次", r"上一", r"继续", r"还是",
+    r"再改", r"刚刚", r"还记得", r"基于前", r"按照前", r"接着",
+]
+
+
+def is_context_dependent(text):
+    """依赖当前会话上下文的问题（之前/刚才/继续…）→ 不适合全局语义缓存。"""
+    n = re.sub(r"\s+", "", text.lower())
+    return any(re.search(p, n) for p in CONTEXT_PATTERNS)
+
+
+LANG_PATTERNS = {
+    "go": [r"(?<![a-z])go(?![a-z])", r"golang"],
+    "python": [r"python", r"\bpy\b"],
+    "java": [r"java"],
+    "cpp": [r"c\+\+", r"cpp"],
+    "c": [r"c语言"],
+    "javascript": [r"javascript", r"\bjs\b"],
+}
+
+
+def extract_language(text):
+    n = re.sub(r"\s+", "", text.lower())
+    for lang, pats in LANG_PATTERNS.items():
+        for p in pats:
+            if re.search(p, n):
+                return lang
+    return None
+
+
+# 无信息模板词：嵌入权重 0。注意"实现/简单"等是意图/主题词，不在此列（结构化保存）。
+STOP_WORDS = {"一个", "一下", "请问", "帮我", "可以", "简单地", "请", "能否"}
 
 
 def _add(vec, s, w):
@@ -112,19 +165,18 @@ def _add(vec, s, w):
 
 
 def embed_text(text):
-    """加权词面嵌入：主题词 3.0+标记桶、普通词 1.0（模板词 0）、字符 bigram 0.4。"""
+    """加权词面嵌入：SUBJECT:主题(3.0) + INTENT:意图(2.0) + 普通词(1.0，模板词0) + bigram(0.4)。"""
     vec = [0.0] * EMBED_DIM
     sub = extract_subject(text)
+    intent = extract_intent(text)
     if sub:
-        _add(vec, sub, 3.0)
-        _add(vec, "subj:" + sub, 2.0)  # 主题标记桶：同主题聚拢、跨主题拉开
+        _add(vec, "SUBJECT:" + sub, 3.0)
+    if intent != "unknown":
+        _add(vec, "INTENT:" + intent, 2.0)
     for w in jieba.cut(text):
         w = w.strip()
-        if not w:
-            continue
-        wt = token_weight(w)
-        if wt > 0:
-            _add(vec, w, wt)
+        if w and w not in STOP_WORDS:
+            _add(vec, w, 1.0)
     chars = [c for c in text if not c.isspace()]
     for i in range(len(chars) - 1):
         _add(vec, chars[i] + chars[i + 1], 0.4)
@@ -132,12 +184,27 @@ def embed_text(text):
     return [v / norm for v in vec] if norm > 0 else vec
 
 
+def intent_compatible(query_intent, candidate_intent):
+    # 上下文依赖或无法判定的意图 → 一律不放行（宁可少命中）
+    if query_intent == "history_query":
+        return False
+    if query_intent == "unknown":
+        return False
+    if candidate_intent == "unknown":
+        return False
+    return query_intent == candidate_intent
+
+
 def rerank_score(query, cached_query):
-    # 主题冲突硬拒：定义类问句主语不同（红黑树 vs 数组）→ 直接拒绝
-    qs = extract_subject(query)
-    cs = extract_subject(cached_query)
+    qs, cs = extract_subject(query), extract_subject(cached_query)
     if qs and cs and qs != cs:
-        return 0.0, False
+        return 0.0, False  # subject_conflict
+    qi, ci = extract_intent(query), extract_intent(cached_query)
+    if not intent_compatible(qi, ci):
+        return 0.0, False  # intent_conflict（含 history/unknown）
+    ql, cl = extract_language(query), extract_language(cached_query)
+    if ql and cl and ql != cl:
+        return 0.0, False  # language_conflict
     # 普通词 Jaccard（兜底）
     kw1 = set(analyse.extract_tags(query, topK=6))
     kw2 = set(analyse.extract_tags(cached_query, topK=6))
@@ -149,7 +216,14 @@ def rerank_score(query, cached_query):
 @use_args({"text": fields.Str(required=True)}, location="json")
 def get_embedding(req: Request, args: dict):
     try:
-        return {"code": 200, "embedding": embed_text(args["text"])}
+        text = args["text"]
+        return {
+            "code": 200,
+            "embedding": embed_text(text),
+            "context_dependent": is_context_dependent(text),
+            "intent": extract_intent(text),
+            "subject": extract_subject(text),
+        }
     except Exception as e:
         logger.error(traceback.format_exc())
         return {"code": 500, "msg": str(e)}
