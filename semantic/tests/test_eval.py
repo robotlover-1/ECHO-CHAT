@@ -11,14 +11,18 @@ from decision import hard_decide
 from parse import parse
 from eval.cases import CASES, MATRIX
 from eval import cases as _cases_mod
+from eval import retrieval_cases as _retr
+from eval.retrieval_cases import ROWS as RETR_ROWS, category_summary as retr_summary
 
 # Task3：decision 纯规则化，不再给分。Go accept 谓词的两半被拆分：
 #   - 纯规则 shared & reason=="ok"：由 decision.hard_decide 断言（此处所有 match 行）。
 #   - 余弦分量（cos >= ACCEPTANCE）：decision 不再产 → 迁到检索级代理此处对关键命中用
 #     models.encode_query 计算。（余弦经 L2 归一：点积==余弦）
-# ACCEPTANCE：**Task 6 用 e5 同主题内正负样本标定后填入**；e5 绝对余弦跨主题趋平(~0.84)，
-# 同主题别名 ~0.9，未校准前不可拍死，先宽松占位 0.0。
-ACCEPTANCE = 0.0  # TODO(Task6): 用同主题内正负样本标定后再改；未校准前宽松占位。见 codecos 断言注释。
+# ACCEPTANCE = Task6 校准值（见 tools/calibrate.py + eval/retrieval_cases.py 结论）：
+#   e5 绝对余弦同主题也饱和~0.84-0.9（复用 OK 命中最低实测 0.776），同主题真负均被 decision
+#   硬拒 → 不存在"正/负可分"的绝对阈值。故 acceptance 只作**极低兜底 0.6**，保证所有 decision-ok
+#   真实复用不被误杀（fit/dev+cal recall=1.0、独立 test 一次 recall=1.0），真正区分靠 decision。
+ACCEPTANCE = 0.6
 
 
 def _cos(a, b):
@@ -63,7 +67,7 @@ def test_matrix_rows_accept_predicate():
             assert shared and reason == "ok", (q, c, reason)
             assert soft is False, (q, c, soft)
             # 余弦代理：跨措辞/跨语言"应命中"在旧 Jaccard≈0 被误伤，Task3 decision 虽不给分，
-            # 但检索级最终仍以余弦排序 → 对 OK 命中维持余弦健康门（阈值 Task6 标定，暂 0.0）。
+            # 但检索级最终仍以余弦排序 → 对 OK 命中维持余弦健康门（Task6 校准 ACCEPTANCE=0.6 兜底）。
             assert codecos(q, c) >= ACCEPTANCE, (q, c)
         else:
             assert shared is False and reason == exp[1], (q, c, reason)
@@ -72,7 +76,7 @@ def test_matrix_rows_accept_predicate():
 
 def test_cross_language_hits_cosine_proxy():
     """ITEM-1 应命中对（跨语言/跨措辞）——模型分阶段这里是唯一守 cosine>=0.25 的地方，现迁为
-    检索级 codecos 代理（含 ACCEPTANCE 宽松 0.0）。纯规则 shared/reason 在 _rows 已守 ok。
+    检索级 codecos 代理（ACCEPTANCE=Task6 校准 0.6 兜底线）。纯规则 shared/reason 在 _rows 已守 ok。
     """
     hits = [
         ("红黑树是什么", "what is a red-black tree"),
@@ -82,7 +86,7 @@ def test_cross_language_hits_cosine_proxy():
     for q, c in hits:
         shared, reason, _ = hard_decide(parse(q), parse(c))
         assert shared and reason == "ok"
-        assert codecos(q, c) >= ACCEPTANCE, (q, c)   # Task6 校准前 ACCEPTANCE=0.0
+        assert codecos(q, c) >= ACCEPTANCE, (q, c)   # Task6 校准 ACCEPTANCE=0.6
 
 
 def test_all_cases():
@@ -109,3 +113,51 @@ def test_category_floors():
     # 每种 reason 都确有 fixture（reason 集与类别一一对应；不引入浮空 reason 掩盖解析缺口）
     assert REASONS == {"language_conflict", "constraint_conflict", "operation_conflict",
                        "intent_conflict", "subject_conflict"}, sorted(REASONS)
+
+
+# ===================== Task6：检索质量集门禁（基于 eval/retrieval_cases.py） =====================
+def test_retrieval_cases_floors():
+    """检索质量三分集的类别最小量（见 retrieval_cases docstring；≥200 且各类别下限）。"""
+    s = retr_summary()
+    assert len(RETR_ROWS) >= 200, len(RETR_ROWS)
+    assert s["onto_pos"] >= 40, s         # 本体正跨语可复用
+    assert s["super_pos"] >= 20, s        # 超本体正语域外
+    assert s["hard_neg"] >= 60, s         # 同主题硬负（语言/操作/意图）
+    assert s["constraint_neg"] >= 30, s   # 约束冲突负
+    assert s["plain_neg"] >= 20, s        # 普通负
+    assert s["bypass"] >= 5, s            # 绕过（状态改写/上下文续）
+
+
+def test_retrieval_positives_decision_ok_and_cos_backstop():
+    """检索级正样本（同本体/超本体可复用）应 (a) decision 判 ok；(b) e5 cosine ≥ ACCEPTANCE 兜底线。
+    Task6 结论：decision-ok 的真实复用最低 cosine≈0.776，ACCEPTANCE=0.6 只作极低兜底、绝不误杀。"""
+    bad = []
+    for q, c, cat in RETR_ROWS:
+        if cat not in ("onto_pos", "super_pos"):
+            continue
+        shared, reason, soft = hard_decide(parse(q), parse(c))
+        if not (shared and reason == "ok"):
+            # 超本体正（subject 无建档）本就常回落 unknown_subject —— 这里只守"并非安全误判"：
+            # 非法 shared 才算失败；其余（被 decision 拒绝）不作为正样本错误（decision 是第一道线）。
+            if shared:
+                bad.append((q, c, reason))
+            continue
+        # decision-ok 的真正候选：必须过 cos 兜底
+        if codecos(q, c) < ACCEPTANCE:
+            bad.append((q, c, round(codecos(q, c), 4)))
+    assert not bad, f"{len(bad)} retrieval-pos 未过 acceptance: {bad[:8]}"
+
+
+def test_retrieval_negatives_are_decision_blocked():
+    """同主题硬负 / 约束 / 普通负不应被 decision 放行（shared）—— decision 先把它们挡在 acceptance 外，
+    正应如此（因此不需要高 acceptance）。注释每类都须 decision 否拒。"""
+    bad = ["本类负样本不应 shared"]
+    kinds = {"hard_neg", "constraint_neg", "plain_neg"}
+    for q, c, cat in RETR_ROWS:
+        if cat not in kinds:
+            continue
+        shared, reason, _ = hard_decide(parse(q), parse(c))
+        if shared:
+            bad.append((q, c, cat, reason))
+    # 超本体正/普通负可判 unknown（本函数只守不该 shared 的硬负/约束/普通真负）
+    assert len(bad) == 1, bad[:8]

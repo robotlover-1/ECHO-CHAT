@@ -69,8 +69,9 @@ semantic_cache:
   embedding_model: "intfloat/multilingual-e5-small"
   embedding_revision: "614241f622f53c4eeff9890bdc4f31cfecc418b3"
   export_version: "onnx-int8-v1"
-  # 检索阈值：acceptance_threshold/min_margin 占位 0.0，Task6 用校准集填入非零
-  acceptance_threshold: 0.0
+  # 检索阈值（Task6 校准）：e5 绝对余弦跨主题饱和、decision-ok 真实复用最低 ~0.776、真负均被
+  # decision 硬拒 → 无正/负可分绝对余弦。acceptance 只作极低兜底0.6；真正区分靠 decision+min_margin(待验证)。
+  acceptance_threshold: 0.6
   min_margin: 0.0
   soft_semantic_fallback: false
   vector_read_mode: "new_only"
