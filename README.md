@@ -36,4 +36,5 @@ DEEPSEEK_API_KEY=sk-xxx ./start.sh   # key 走环境变量，勿提交 git
 
 ## 相关仓库
 
-- 存储：https://github.com/robotlover-1/pocket-kv（kvstore，submodule 引入）
+- 存储：[pocket-kv](https://github.com/robotlover-1/pocket-kv)（kvstore，submodule 引入）
+- 助手：本仓库 [ECHO-CHAT](https://github.com/robotlover-1/ECHO-CHAT)
