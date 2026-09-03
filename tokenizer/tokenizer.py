@@ -107,7 +107,7 @@ def extract_subject(text):
 INTENT_RULES = [
     ("state_update", [r"记住", r"以后.*回答", r"后面.*会问", r"从现在开始", r"你是一个", r"你是一名", r"扮演", r"我的名字是"]),
     ("history_query", [r"之前.*过.*吗", r"以前.*过.*吗", r"刚才.*过.*吗", r"是否.*过", r"还记得", r"上次", r"前面"]),
-    ("implementation", [r"实现", r"写一个", r"写出", r"给.*代码", r"代码示例", r"完整代码"]),
+    ("implementation", [r"实现", r"写一个", r"写出", r"给.*代码", r"代码示例", r"完整代码", r"生成", r"构建", r"做一个"]),
     ("definition", [r"是什么", r"什么是", r"什么意思", r"介绍一下", r"概念", r"定义"]),
     ("comparison", [r"区别", r"差异", r"对比", r"哪个好"]),
     ("reason", [r"为什么", r"原因", r"为何"]),
@@ -211,14 +211,15 @@ def embed_text(text):
 
 
 def intent_compatible(query_intent, candidate_intent):
-    # 上下文依赖或无法判定的意图 → 一律不放行（宁可少命中）
-    if query_intent == "history_query":
+    # 意图冲突硬拒：只有"双方都可判定且不同"才拒绝（如 定义 vs 实现），
+    # 以及 history_query（依赖会话）一律不放行。
+    # unknown 侧不做意图判断——交给向量余弦 + 主题 + 关键词决定，
+    # 否则"生成一个红黑树"这类未收录意图的问题连完全相同重问都会被误拒。
+    if query_intent == "history_query" or candidate_intent == "history_query":
         return False
-    if query_intent == "unknown":
-        return False
-    if candidate_intent == "unknown":
-        return False
-    return query_intent == candidate_intent
+    if query_intent != "unknown" and candidate_intent != "unknown":
+        return query_intent == candidate_intent
+    return True
 
 
 def rerank_score(query, cached_query):
