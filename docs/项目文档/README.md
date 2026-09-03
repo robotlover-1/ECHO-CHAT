@@ -11,8 +11,11 @@
 
 ## 使用说明
 
-- 项目根：`9.1-kvstore/`（kvstore 与 ai-chat 的单一仓库）。
+- 项目根（2026-09 起已拆分，以 github 为准）：
+  - **pocket-kv** `github.com/robotlover-1/pocket-kv` —— kvstore（C 存储）
+  - **ECHO-CHAT** `github.com/robotlover-1/ECHO-CHAT` —— ai 助手，内部 `kvstore/` 为 submodule
+- 历史大仓库 `9.1-kvstore` 仅作迭代历史参考。
 - 一句话概括：**用自己写的 Redis（kvstore）给一个 AI 聊天系统当"短期记忆"**。
-- 每份文档末尾都标注了"文档与代码的已知差异"，遇到冲突以代码为准。
+- 每份文档末尾都标注了"文档与代码的已知差异"，遇到冲突以代码为准。ai-chat 侧演进历程见 [04-业务应用.md §11](04-业务应用.md)。
 
-> 生成于 2026-08-26，关键事实均经代码/git 提交逐行核验。
+> 生成于 2026-08-26；2026-09-03 更新仓库拆分说明。关键事实均经代码/git 提交逐行核验。
