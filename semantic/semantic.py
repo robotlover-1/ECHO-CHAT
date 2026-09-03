@@ -1,10 +1,11 @@
-"""semantic.py —— 语义服务路由：/embed /rerank /healthz /readyz /model-info + 启动预加载 warmup。"""
+"""semantic.py —— 语义服务路由：/embed /rerank(deprecated) /decision[/batch] /healthz /readyz /model-info。"""
 from nuxt import route, logger
 from nuxt.repositorys.validation import fields, use_args
 import traceback
+import json
 from parse import parse
 from embedding import embed_text
-from decision import decide
+from decision import hard_decide
 import models  # e5 封装：warmup/ready/model_info/encode_query
 
 
@@ -52,9 +53,52 @@ def get_embedding(req, args: dict):
 @route("/rerank", methods=["POST"])
 @use_args({"query": fields.Str(required=True), "cached_query": fields.Str(required=True)}, location="json")
 def get_rerank(req, args: dict):
+    """DEPRECATED：decision 已纯规则化，不再产模型分；Go 侧改用 /v1/decision[/batch]。
+    保留端点返回 {code, score:0.0, shared, reason, soft} 兼容旧结构，score 恒 0.0。
+    """
     try:
-        score, shared, reason = decide(parse(args["query"]), parse(args["cached_query"]))
-        return {"code": 200, "score": score, "shared": shared, "reason": reason}
+        shared, reason, soft = hard_decide(parse(args["query"]), parse(args["cached_query"]))
+        return {"code": 200, "score": 0.0, "shared": shared, "reason": reason, "soft": soft}
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        return {"code": 500, "msg": str(e)}
+
+
+@route("/v1/decision", methods=["POST"])
+@use_args({"query": fields.Str(required=True), "cached_query": fields.Str(required=True)}, location="json")
+def v1_decision(req, args: dict):
+    """单对纯规则决策：{code, shared, reason, soft}，无模型分。"""
+    try:
+        shared, reason, soft = hard_decide(parse(args["query"]), parse(args["cached_query"]))
+        return {"code": 200, "shared": shared, "reason": reason, "soft": soft}
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        return {"code": 500, "msg": str(e)}
+
+
+def _json_list(value, name):
+    """batch candidates 手解析：优先已是 list；是 JSON 串则解析；否则报错。"""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, (str, bytes)):
+        v = json.loads(value)
+        if not isinstance(v, list):
+            raise ValueError("%s 须为数组" % name)
+        return v
+    raise ValueError("%s 须为数组或 JSON 数组串" % name)
+
+
+@route("/v1/decision/batch", methods=["POST"])
+@use_args({"query": fields.Str(required=True), "candidates": fields.Raw(required=True)}, location="json")
+def v1_decision_batch(req, args: dict):
+    """批量决策：逐条 hard_decide；candidates 为数组（List 不可靠兼容 → 手解析 JSON/list）。"""
+    try:
+        qp = parse(args["query"])
+        out = []
+        for c in _json_list(args["candidates"], "candidates"):
+            s, r, soft = hard_decide(qp, parse(c))
+            out.append({"cached_query": c, "shared": s, "reason": r, "soft": soft})
+        return {"code": 200, "results": out}
     except Exception as e:
         logger.error(traceback.format_exc())
         return {"code": 500, "msg": str(e)}

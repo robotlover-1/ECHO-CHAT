@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from parse import parse
-from decision import decide
+from decision import hard_decide
 
 CASES = [
     # (text, subject_id, intent, language)
@@ -51,8 +51,9 @@ def test_parse_cn_head_english_subject_space_retry():
     q = parse("实现一个 red-black tree")
     assert q.subject_id == "red_black_tree", q.subject_text
     assert q.subject_text == "red-black tree", q.subject_text
-    # 回归：携词不因空格吞并误判为 rbtree 同义宾语
-    assert decide(parse("红黑树是什么"), q)[1:] == (False, "intent_conflict")
+    # 回归：携词不因空格吞并误判为 rbtree 同义宾语（decision 纯规则 hard_decide；reason 在 idx1）
+    s, r, _ = hard_decide(parse("红黑树是什么"), q)
+    assert (s, r) == (False, "intent_conflict")
 
 def test_parse_bypass():
     assert parse("继续修改上面的红黑树").bypass_cache is True

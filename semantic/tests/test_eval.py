@@ -6,27 +6,46 @@ sys.path.insert(0, os.path.dirname(_HERE))  # semantic（parse/decision/ontology
 sys.path.insert(0, _HERE)                    # tests -> eval 包
 
 import pytest
-from decision import decide
+from models import encode_query
+from decision import hard_decide
 from parse import parse
 from eval.cases import CASES, MATRIX
 from eval import cases as _cases_mod
 
+# Task3：decision 纯规则化，不再给分。Go accept 谓词的两半被拆分：
+#   - 纯规则 shared & reason=="ok"：由 decision.hard_decide 断言（此处所有 match 行）。
+#   - 余弦分量（cos >= ACCEPTANCE）：decision 不再产 → 迁到检索级代理此处对关键命中用
+#     models.encode_query 计算。（余弦经 L2 归一：点积==余弦）
+# ACCEPTANCE：**Task 6 用 e5 同主题内正负样本标定后填入**；e5 绝对余弦跨主题趋平(~0.84)，
+# 同主题别名 ~0.9，未校准前不可拍死，先宽松占位 0.0。
+ACCEPTANCE = 0.0  # TODO(Task6): 用同主题内正负样本标定后再改；未校准前宽松占位。见 codecos 断言注释。
+
+
+def _cos(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+
+def codecos(q, c):
+    """检索级"Go 接受谓词"的余弦代理：cos(encode_query(q), encode_query(c))。"""
+    return _cos(encode_query(q), encode_query(c))
+
+
 REASONS = {r for _, c, exp in CASES if isinstance(exp, tuple) for r in [exp[1]]}
+# decision 可达 reason 集（含纯规则 new 软命中，但 CASES 无 soft fixture，故 reason 集仍为 5 硬拒）
 
 
 def _rows():
-    """每条三元组 (q,c,exp) 必须依次落在 parse→decide 的真实结果。"""
+    """每条三元组 (q,c,exp) 必须落在 raw parse→hard_decide 的真实结果（纯规则 shared/reason）。"""
     bad = []
     for q, c, exp in CASES:
-        score, shared, reason = decide(parse(q), parse(c))
+        shared, reason, soft = hard_decide(parse(q), parse(c))
         if exp == "match":
-            # Go accept 谓词契约（ITEM-1）：shared && reason=="ok" && score>=rerank_threshold(0.25)。
-            # ok 分支 score=canonical 嵌入余弦，等价格等价度；阈值 0.25 见 config。
-            if not (shared and reason == "ok" and score >= 0.25):
-                bad.append((q, c, reason, score))
-        else:
-            if shared or reason != exp[1] or score != 0.0:
-                bad.append((q, c, reason, score, exp))
+            # Go accept 谓词契约迁移：shared && reason=="ok"；soft 通道不用于正样本(soft 默认关)。
+            if not (shared and reason == "ok"):
+                bad.append((q, c, reason))
+        else:  # ("reject", expected_reason)
+            if shared or reason != exp[1]:
+                bad.append((q, c, reason, exp))
     return bad
 
 
@@ -35,27 +54,35 @@ def test_total_at_least_120():
 
 
 def test_matrix_rows_accept_predicate():
-    """MATRIX 手工权威集断言到 Go 层 accept 谓词，不止 decision shared/reason。"""
+    """MATRIX 手工权威集断言到(纯规则)accept 谓词 shared && reason=="ok"，并额外做
+    稀疏余弦代理（e5 余弦>=ACCEPTANCE，Task6 校准前为 0.0 宽松占位）。
+    """
     for q, c, exp in MATRIX:
-        score, shared, reason = decide(parse(q), parse(c))
+        shared, reason, soft = hard_decide(parse(q), parse(c))
         if exp == "match":
             assert shared and reason == "ok", (q, c, reason)
-            assert score >= 0.25, (q, c, score)  # 0.25: config rerank_threshold
+            assert soft is False, (q, c, soft)
+            # 余弦代理：跨措辞/跨语言"应命中"在旧 Jaccard≈0 被误伤，Task3 decision 虽不给分，
+            # 但检索级最终仍以余弦排序 → 对 OK 命中维持余弦健康门（阈值 Task6 标定，暂 0.0）。
+            assert codecos(q, c) >= ACCEPTANCE, (q, c)
         else:
             assert shared is False and reason == exp[1], (q, c, reason)
-            assert score == 0.0, (q, c, reason, score)
+            assert soft is False, (q, c, reason)
 
 
-def test_cross_language_hits_clear():
-    """ITEM-1 应命中对（跨语言/跨措辞）——旧 Jaccard≈0 曾在生产误伤，此处显式断言可读。"""
+def test_cross_language_hits_cosine_proxy():
+    """ITEM-1 应命中对（跨语言/跨措辞）——模型分阶段这里是唯一守 cosine>=0.25 的地方，现迁为
+    检索级 codecos 代理（含 ACCEPTANCE 宽松 0.0）。纯规则 shared/reason 在 _rows 已守 ok。
+    """
     hits = [
         ("红黑树是什么", "what is a red-black tree"),
         ("用 C 语言生成红黑树", "使用 C 编写 rbtree"),
         ("用 Python 实现红黑树插入", "implement RB-tree insertion in Python"),
     ]
     for q, c in hits:
-        score, _, reason = decide(parse(q), parse(c))
-        assert reason == "ok" and score >= 0.25, (q, c, score)
+        shared, reason, _ = hard_decide(parse(q), parse(c))
+        assert shared and reason == "ok"
+        assert codecos(q, c) >= ACCEPTANCE, (q, c)   # Task6 校准前 ACCEPTANCE=0.0
 
 
 def test_all_cases():

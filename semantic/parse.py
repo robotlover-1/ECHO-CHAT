@@ -467,6 +467,42 @@ def build_fingerprint(qp):
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
+# ============ Task 3(P2/3)：critical 约束识别（纯规则；供 decision.soft/其他渠道） ============
+# 由已知关键词短语映射到约束类别，作为语义软匹配通道（soft）里的"硬约束安全网"：
+# 一侧宣称的关键约束若另一侧完全未满足（critical_constraints 之差非空），soft 不放行。
+CRITICAL_ZH = {
+    "concurrency": ["线程安全", "并发安全", "加锁", "锁"],
+    "persistence": ["持久化", "落盘"],
+    "dup_keys": ["支持重复键", "可重复键"],
+    "parent_ptr": ["带父指针", "父指针"],
+    "recursion_mode": ["无递归", "非递归"],
+    "scope_limitation": ["只实现", "仅实现", "只写", "只做", "完整实现", "简化", "最小"],
+    "capacity": ["容量", "N个", "有限", "上限"],
+    "space_complexity": ["O(1)空间", "空间复杂度"],
+    "time_complexity": ["O(n)", "O(logn)", "时间复杂度", "O(1)"],
+    "return_format": ["返回类型", "输出格式", "JSON格式", "格式为"],
+}
+
+
+def critical_constraints(qp) -> frozenset:
+    """输入已 parse 的 ParsedQuery，把命中关键词的约束类别汇总为 frozenset（空=无硬约束）。
+
+    纯规则、无模型：任类别下任关键词出现在 normalized (raw 兜底) 文本即计入。可散列安全。
+    """
+    if getattr(qp, "raw_text", None) is None:
+        return frozenset()
+    n = qp.normalized_text or qp.raw_text
+    if not n:
+        return frozenset()
+    cats = set()
+    for cat, kws in CRITICAL_ZH.items():
+        for kw in kws:
+            if kw in n:
+                cats.add(cat)
+                break   # 每类只记一次
+    return frozenset(cats)
+
+
 def normalize(text):
     """归一化问句：NFKC 统一、小写、c++/c#/.net/node.js 符号占位保护、统一空白。"""
     s = unicodedata.normalize("NFKC", text)
