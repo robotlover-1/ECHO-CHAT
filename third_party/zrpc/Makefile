@@ -46,9 +46,12 @@ else
 RUN_TESTS := $(PURE_TESTS)
 endif
 
-.PHONY: all test clean
+.PHONY: all test ccli clean
 
 all: $(LIB)
+
+# standalone C unary client CLI (used by zrpc-go integration tests)
+ccli: $(TEST_BIN_DIR)/ccli
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
