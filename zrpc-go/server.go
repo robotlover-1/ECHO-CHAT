@@ -293,12 +293,13 @@ func (s *Server) Close() error {
 	s.closed = true
 	s.mu.Unlock()
 
-	C.zrpc_server_shutdown(s.c)
-	serverRemove(s)
+	C.zrpc_server_shutdown(s.c)   // stop accepting + wake/shutdown conn readers
 	s.cancelAllStreams()
+	serverRemove(s)
 	close(s.done)
 	s.wg.Wait()
 	handleClearFor(s)
+	C.zrpc_server_join(s.c)       // wait for the NtyCo scheduler thread to exit
 	return nil
 }
 

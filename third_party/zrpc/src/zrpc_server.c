@@ -354,6 +354,10 @@ static void server_main(void *arg)
             server_set_err(s, "accept: %s", strerror(errno));
             break;
         }
+        if (s->stopping) {      /* wake-up dummy connection during shutdown */
+            close(cfd);
+            break;
+        }
         int fl = fcntl(cfd, F_GETFL, 0);
         fcntl(cfd, F_SETFL, fl | O_NONBLOCK);
 
@@ -494,10 +498,45 @@ int zrpc_server_shutdown(zrpc_server_t *s)
 {
     if (!s) return ZRPC_STATUS_INVALID_ARGUMENT;
     s->stopping = 1;
-    if (s->listen_fd >= 0) {
-        close(s->listen_fd);           /* accept coroutine may not wake instantly */
-        s->listen_fd = -1;
+    __sync_synchronize();
+
+    int lfd = s->listen_fd;
+    if (lfd >= 0) {
+        /* Wake the accept coroutine with a dummy connect; it then sees
+         * s->stopping, closes the listener and exits. */
+        struct sockaddr_in addr;
+        socklen_t alen = sizeof(addr);
+        if (getsockname(lfd, (struct sockaddr *)&addr, &alen) == 0) {
+            int c = socket(AF_INET, SOCK_STREAM, 0);
+            if (c >= 0) {
+                if (connect(c, (struct sockaddr *)&addr, alen) != 0) { /* ignore */ }
+                shutdown(c, SHUT_RDWR);
+                close(c);
+            }
+        }
     }
+
+    /* shutdown() (not close) each connection: it wakes the blocked reader
+     * coroutine (recv -> 0 -> exit) without a cross-thread close fd-reuse race. */
+    pthread_mutex_lock(&s->conn_lock);
+    int cap = 0;
+    for (zrpc_conn_t *c = s->conns; c; c = c->next) cap++;
+    int n = 0;
+    int *fds = cap ? (int *)malloc((size_t)cap * sizeof(int)) : NULL;
+    if (fds) {
+        for (zrpc_conn_t *c = s->conns; c; c = c->next) fds[n++] = c->fd;
+    }
+    pthread_mutex_unlock(&s->conn_lock);
+    for (int i = 0; i < n; i++) shutdown(fds[i], SHUT_RDWR);
+    free(fds);
+    return ZRPC_STATUS_OK;
+}
+
+int zrpc_server_join(zrpc_server_t *s)
+{
+    if (!s || !s->sched_thread_started) return ZRPC_STATUS_OK;
+    pthread_join(s->sched_thread, NULL);
+    s->sched_thread_started = 0;
     return ZRPC_STATUS_OK;
 }
 

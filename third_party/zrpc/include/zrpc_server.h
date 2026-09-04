@@ -63,8 +63,16 @@ int zrpc_server_register(zrpc_server_t *server,
 /* Bind + listen + start the NtyCo scheduler thread. Returns immediately. */
 int zrpc_server_serve(zrpc_server_t *server);
 
-/* Stop accepting and signal the scheduler to wind down (best effort). */
+/*
+ * Graceful shutdown (Task 8): stops accepting (waking the accept coroutine with
+ * a dummy connect), then shuts down every connection so its reader coroutine
+ * wakes and exits. When all coroutines are gone nty_schedule_run() returns and
+ * the scheduler thread finishes.
+ */
 int zrpc_server_shutdown(zrpc_server_t *server);
+
+/* Wait for the scheduler thread to finish (call after shutdown). */
+int zrpc_server_join(zrpc_server_t *server);
 
 /* Free everything (after shutdown). */
 void zrpc_server_free(zrpc_server_t *server);
