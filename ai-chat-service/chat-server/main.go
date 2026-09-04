@@ -20,13 +20,15 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"net/http"
-
 	"net"
+	"net/http"
+	"sync/atomic"
 )
 
 var (
 	configFile = flag.String("config", "dev.config.yaml", "")
+	// ready 置真表示 zrpc/gRPC 监听均已就绪，供 /readyz 探活。
+	ready atomic.Bool
 )
 
 func main() {
@@ -36,6 +38,20 @@ func main() {
 	busMetrics := metrics_bus.NewBusMetrics(registry)
 
 	http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	// HTTP healthz/readyz（替代 grpc_health_probe；复用 :8080 metrics server）
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	http.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if ready.Load() {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ready"))
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("not ready"))
+	})
 	go http.ListenAndServe(":8080", nil)
 
 	//初始化配置文件
@@ -89,6 +105,7 @@ func main() {
 	healthCheckSrv := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(s, healthCheckSrv)
 
+	ready.Store(true) // zrpc 已 Serve、gRPC 监听已 bind → /readyz 放行
 	if err = s.Serve(lis); err != nil {
 		log.Fatal(err)
 	}

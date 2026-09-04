@@ -43,7 +43,7 @@ services:
         parallelism: 2
         order: start-first
     healthcheck:
-      test: ["CMD","grpc_health_probe","-addr=:50051"]
+      test: ["CMD","wget","-qO-","http://127.0.0.1:18082/readyz"]
       interval: 5s
       timeout: 1s
       retries: 3
@@ -68,7 +68,7 @@ services:
     entrypoint: ["./keywords-filter"]
     command: ["--config=config.yaml","--dict=dict.txt"]
     healthcheck:
-      test: [ "CMD","grpc_health_probe","-addr=:50051" ]
+      test: ["CMD","wget","-qO-","http://127.0.0.1:18081/readyz"]
       interval: 5s
       timeout: 1s
       retries: 3
@@ -93,7 +93,7 @@ services:
     entrypoint: [ "./ai-chat-service" ]
     command: [ "--config=config.yaml" ]
     healthcheck:
-      test: [ "CMD","grpc_health_probe","-addr=:50051" ]
+      test: ["CMD","wget","-qO-","http://127.0.0.1:8080/readyz"]
       interval: 5s
       timeout: 1s
       retries: 3
