@@ -618,6 +618,7 @@ def build_fingerprint(qp):
         "schema": "v1",
         "parser_version": qp.parser_version,
         "ontology_version": qp.ontology_version,
+        "lang_terms_version": qp.lang_terms_version,
         "subject_id": qp.subject_id,
         "intent": qp.intent,
         "language": qp.language,
@@ -768,6 +769,12 @@ def parse(text):
                     "matched_surface": ent["surface"], "multi_subject": False,
                     "reason": None, "source": "lang_terms",
                 }
+        else:
+            # 语言已知但 lang 受限实体 0 命中（未落库/库未收录该实体）→ 主题仍无法映射。
+            # 与下方 language 未知/概念未解出路径同设 subject_unresolved，reason 场对称：
+            # 仅供 decision 读诊断，hard_decide 已由 subject_id=None 兜 unknown_subject，
+            # 不读该 reason，决策语义不变。
+            subject_meta["reason"] = "subject_unresolved"
     elif subject_meta["subject_id"] is None:
         # 概念/实体都未解出：无法映射主题(含 unknown 语言弱词)→ 非 eligible；供 decision 走 unknown。
         subject_meta["reason"] = "subject_unresolved"
