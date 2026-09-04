@@ -248,16 +248,19 @@ def normalize_lang_tag(word):
 
 def extract_language(text):
     """抽取实现目标语言：cpp/csharp/dotnet/javascript/node/typescript/java/python/rust/golang/go/c；
-    长模式优先；命中多个不同语言返回 None。"""
-    n = re.sub(r"\s+", "", text.lower())
+    长模式优先；命中多个不同语言返回 None。
+    用**保空格**小写文本跑词界正则：若先去空格，"实现 cpp rbtree" 会粘连成 cpprbtree，
+    ASCII 词界把 cpp 后紧跟的字母挡掉 → 语言漏判。压缩文本仅供 c语言/实现语境特判。"""
+    low = " ".join(text.lower().split())
+    n = re.sub(r"\s+", "", low)
     hits = set()
     for lang, pat in LANG_PATTERNS:
-        if pat.search(n):
+        if pat.search(low):
             hits.add(lang)
     if "c语言" in n or _C_IMPL_CTX.search(n):
         hits.add("c")
-    # carry-over：英文尾式 "… in python/java/go…"（压缩后 inpython 粘连，须在带空格文本上补判）
-    in_lang = _EN_IN_LANG.search(text)
+    # carry-over：英文尾式 "… in python/java/go…"（压缩后 inpython 粘连，词界须在带空格文本上判）
+    in_lang = _EN_IN_LANG.search(low)
     if in_lang:
         hits.add(normalize_lang_tag(in_lang.group(1)))
     if len(hits) == 1:
@@ -417,9 +420,23 @@ def _is_alias_piece(word, subject_id):
         return False
 
 
+def _consumed_cover(_qp):
+    """把所有“已消费词”(主题别名/停用/白名单/语言/操作词)的字面拼起来，用于识别 jieba 跨界碎片。"""
+    parts = []
+    if _qp.subject_id:
+        from ontology import load
+        for c in load()["concepts"]:
+            if c["id"] == _qp.subject_id:
+                parts += c["aliases"]
+                break
+    parts += list(STOP_WORDS) + list(_RESIDUAL_WHITELIST) + list(LANG_TERMS) + list(OP_TERMS_EN) + list(OP_TERMS_ZH)
+    return "".join(parts).lower()
+
+
 def _residual_words(_qp):
     """未被消费的内容词 → frozenset。空 = 无未解析约束 => eligible 前提之一。"""
     toks = _tokenize_words(_qp.raw_text)
+    cover = _consumed_cover(_qp)
     keep = set()
     for w in toks:
         wl = w.lower().strip()
@@ -432,6 +449,10 @@ def _residual_words(_qp):
         if (wl in LANG_TERMS or wl in OP_TERMS_EN or w in OP_TERMS_ZH):
             continue
         if _is_alias_piece(w, _qp.subject_id):
+            continue
+        # jieba 会从别名/模板词边界“借字”成跨界碎片(如“写红黑树”→“写红”)。这类 token 非真实内容约束：
+        # 若它含中文且每个字符都已落在已消费词的字面里(如 写∈白名单、红∈别名“红黑树”)，判为碎片丢弃。
+        if cover and re.search(r"[一-鿿]", w) and all(ch in cover for ch in wl):
             continue
         keep.add(w)
     return frozenset(keep)
