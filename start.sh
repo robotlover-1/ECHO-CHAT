@@ -3,7 +3,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 # 必须用普通用户运行：sudo 会把 $HOME 切到 /root，$PATH 里依赖的 $HOME/.local/bin
-# （pip --user 装的 nuxt/go 工具）就找不到；且 8 个服务均为高端口、无特权需求。
+# （pip --user 装的 nuxt/go 工具）就找不到；且服务均为高端口、无特权需求。
 if [ "$(id -u)" -eq 0 ]; then
   echo "✘ 请勿用 sudo/root 运行 start.sh（会找不到用户级 python 包 nuxt）。请先 sudo ./stop.sh 清理，再以普通用户 ./start.sh" >&2
   exit 1
@@ -60,10 +60,31 @@ if [ $frontend_need -eq 1 ]; then
   fi
 fi
 
+# kvstore(C, 子模块)：二进制缺失 / 存在更新的 .c/.h / --rebuild 时 make（新 clone 无二进制需自动补）
+KV_TARGET="$BASE/kvstore/kvstore/kvstore"
+kv_need=0
+[ $REBUILD -eq 1 ] && kv_need=1
+[ -f "$KV_TARGET" ] || kv_need=1
+if [ $kv_need -eq 0 ]; then
+  find "$BASE/kvstore/kvstore" \( -name '*.c' -o -name '*.h' \) -newer "$KV_TARGET" -print -quit 2>/dev/null | grep -q . && kv_need=1
+fi
+if [ $kv_need -eq 1 ]; then
+  echo "  [build] kvstore (make)"
+  if ! ( cd "$BASE/kvstore/kvstore" && make ); then
+    echo "  [build] kvstore ✘ 编译失败（需 make/gcc，见 kvstore/README）"
+    build_failed+=("kvstore")
+  fi
+fi
+
 if [ ${#build_failed[@]} -ne 0 ]; then
   echo
   echo "✘ 编译失败: ${build_failed[*]}; 请修复后重试 ./start.sh"
   exit 1
+fi
+
+if [ ! -f "$BASE/semantic/models/e5s-v1/model.onnx" ]; then
+  echo "⚠ 未找到 semantic 模型文件（semantic/models/e5s-v1/model.onnx）：语义缓存将不可用（/embed 会 500 → 优雅 miss）。"
+  echo "  获取：见 semantic/README —— 一次性 venv 跑 semantic/tools/export_e5_onnx.py，或从开发机拷贝 semantic/models/e5s-v1/（该目录 gitignored，不在仓库内）。"
 fi
 
 if [ -z "${DEEPSEEK_API_KEY:-}" ]; then

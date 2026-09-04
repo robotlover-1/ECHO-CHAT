@@ -144,3 +144,4 @@ semantic/models/e5s-v1/onnx-fp32/
 semantic/models/e5s-v1/onnx-api/
 semantic/tools/.cal_cache.json
 semantic/tools/cal_thresholds.json
+ai-chat-backend/www/
