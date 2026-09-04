@@ -5,7 +5,7 @@ import traceback
 import json
 from parse import parse
 from embedding import embed_text
-from decision import hard_decide
+from decision import hard_decide_verbose
 import models  # e5 封装：warmup/ready/model_info/encode_query
 
 
@@ -61,11 +61,12 @@ def get_embedding(req, args: dict):
 @use_args({"query": fields.Str(required=True), "cached_query": fields.Str(required=True)}, location="json")
 def get_rerank(req, args: dict):
     """DEPRECATED：decision 已纯规则化，不再产模型分；Go 侧改用 /v1/decision[/batch]。
-    保留端点返回 {code, score:0.0, shared, reason, soft} 兼容旧结构，score 恒 0.0。
+    保留端点返回 {code, score:0.0, shared, reason, soft} 兼容旧结构，score 恒 0.0；
+    同样透传可选 source（默认 "hard"），旧字段不变。
     """
     try:
-        shared, reason, soft = hard_decide(parse(args["query"]), parse(args["cached_query"]))
-        return {"code": 200, "score": 0.0, "shared": shared, "reason": reason, "soft": soft}
+        shared, reason, soft, source = hard_decide_verbose(parse(args["query"]), parse(args["cached_query"]))
+        return {"code": 200, "score": 0.0, "shared": shared, "reason": reason, "soft": soft, "source": source}
     except Exception as e:
         logger.error(traceback.format_exc())
         return {"code": 500, "msg": str(e)}
@@ -74,10 +75,12 @@ def get_rerank(req, args: dict):
 @route("/v1/decision", methods=["POST"])
 @use_args({"query": fields.Str(required=True), "cached_query": fields.Str(required=True)}, location="json")
 def v1_decision(req, args: dict):
-    """单对纯规则决策：{code, shared, reason, soft}，无模型分。"""
+    """单对纯规则决策：{code, shared, reason, soft, source}，无模型分。
+    source 默认 "hard"；family_compat 开关开启且命中时 "family_compat"。旧字段不变。
+    """
     try:
-        shared, reason, soft = hard_decide(parse(args["query"]), parse(args["cached_query"]))
-        return {"code": 200, "shared": shared, "reason": reason, "soft": soft}
+        shared, reason, soft, source = hard_decide_verbose(parse(args["query"]), parse(args["cached_query"]))
+        return {"code": 200, "shared": shared, "reason": reason, "soft": soft, "source": source}
     except Exception as e:
         logger.error(traceback.format_exc())
         return {"code": 500, "msg": str(e)}
@@ -103,8 +106,8 @@ def v1_decision_batch(req, args: dict):
         qp = parse(args["query"])
         out = []
         for c in _json_list(args["candidates"], "candidates"):
-            s, r, soft = hard_decide(qp, parse(c))
-            out.append({"cached_query": c, "shared": s, "reason": r, "soft": soft})
+            s, r, soft, source = hard_decide_verbose(qp, parse(c))
+            out.append({"cached_query": c, "shared": s, "reason": r, "soft": soft, "source": source})
         return {"code": 200, "results": out}
     except Exception as e:
         logger.error(traceback.format_exc())
