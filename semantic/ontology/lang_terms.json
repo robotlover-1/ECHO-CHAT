@@ -1,0 +1,20 @@
+{
+  "lang_terms_version": "2026-09-04.1",
+  "languages": {
+    "cpp": {
+      "list":  {"status": "mapped", "entity_id": "cpp_std_list", "kind": "library_type", "namespace": "std", "family": "linked_list", "type_args": "keep"},
+      "vector": {"status": "mapped", "entity_id": "cpp_std_vector", "kind": "library_type", "namespace": "std", "family": "dynamic_array", "type_args": "keep"},
+      "map":    {"status": "mapped", "entity_id": "cpp_std_map", "kind": "library_type", "namespace": "std", "family": null, "type_args": "keep"},
+      "unordered_map": {"status": "mapped", "entity_id": "cpp_std_unordered_map", "kind": "library_type", "namespace": "std", "family": "hash_table", "type_args": "keep"}
+    },
+    "python": {
+      "list": {"status": "mapped", "entity_id": "python_builtin_list", "kind": "builtin_type", "family": "dynamic_array"},
+      "dict": {"status": "mapped", "entity_id": "python_builtin_dict", "kind": "builtin_type", "family": "hash_table"},
+      "set":  {"status": "mapped", "entity_id": "python_builtin_set", "kind": "builtin_type", "family": null}
+    },
+    "java": {
+      "List": {"status": "ambiguous"},
+      "ArrayList": {"status": "mapped", "entity_id": "java_array_list", "kind": "class", "family": "dynamic_array"}
+    }
+  }
+}
