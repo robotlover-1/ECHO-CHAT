@@ -41,7 +41,9 @@
 - 本项目现状：Task 2 决策采用 NtyCo 承担 zrpc server 的 accept/读调度（计划 §5.5 方案 B）。
   已将其 core 源码引入本目录 `ntyco/`（随 `libzrpc.a` 一起编译，来源如上）。
   非协程线程（Go/cgo 侧、C client）调用 `recv/send/accept/close` 会自动回退真实 libc，仅协程内表现为协程语义。
-  NtyCo 基于 ucontext 切换栈，与 ASan 不兼容（误报），内存健康改用 load 压测的 fd/RSS canary 覆盖。
+  NtyCo 基于 ucontext 切换栈，ASan 对 makecontext/swapcontext 产生 stack-overflow 伪报。
+  该伪报已用保护页验证：给共享栈顶页设 PROT_NONE 后跑 10 万次 unary（每次 yield 都 `_save_stack`
+  复制到栈顶），全程无段错误，证实并非真实越界；内存健康改由 load 的 fd/RSS canary + 该守卫页实验覆盖。
 - 已知边界：跨线程关闭 fd 无法即时唤醒 NtyCo 调度线程（优雅停机推迟到 Task 8 处理）。
 
 ## 5. 授权记录

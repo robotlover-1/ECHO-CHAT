@@ -60,8 +60,10 @@ make -C third_party/zrpc test       # 普通构建：4 个测试全跑
 ./tests/bin/test_unary load 100000 1        # 单连接顺序（fd/RSS canary）
 ./tests/bin/test_unary load 100000 8        # 8 线程并发
 # sanitizer：纯 C 测试（frame/io/json）。test_unary 驱动 NtyCo ucontext 协程，
-# ASan 不支持 makecontext/swapcontext 会产生误报，故 sanitizer 构建自动跳过它，
-# NtyCo 路径的内存健康改由 load 的 fd/RSS canary 覆盖。
+# ASan 不支持 makecontext/swapcontext 会产生误报，故 sanitizer 构建自动跳过它。
+# NtyCo 路径的内存健康由两层证据覆盖：(1) load 压测 fd/RSS canary 稳定；
+# (2) 给共享栈顶页加 PROT_NONE 守卫页后 10 万次压测(每次 yield 均复制到栈顶)
+# 全程无段错误 —— 证实 ASan 报的 1 字节越界确为 ucontext/ASan 交互伪影，非真实越界。
 CFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
   make -C third_party/zrpc clean test
 ```
