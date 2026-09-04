@@ -21,6 +21,16 @@
 #include <time.h>
 
 #include "zrpc_protocol.h"
+#include "nty_coroutine.h"   /* NtyCo: recv/send become coroutine-yielding in-co */
+
+/* NtyCo link-time overrides route recv()/send() through the scheduler when the
+ * calling thread is inside a coroutine; other threads fall back to libc. On the
+ * coroutine path we must never block the scheduler on poll(), so we read/write
+ * in plain loops and let NtyCo yield. */
+static int in_coroutine(void)
+{
+    return nty_coroutine_get_sched() != NULL;
+}
 
 static int64_t now_mono_ns(void)
 {
@@ -76,6 +86,40 @@ static int wait_ready(int fd, short events, int64_t deadline_ms)
     }
 }
 
+static int map_recv_error(int err);
+static int map_send_error(int err);
+
+/* Coroutine-only read: recv() yields on no-data; EAGAIN/EWOULDBLOCK after a
+ * scheduler wake-up just means "still no data", so loop. No poll() is used. */
+static int co_read_full(int fd, void *buf, size_t len)
+{
+    uint8_t *p = (uint8_t *)buf;
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = recv(fd, p + off, len - off, 0);
+        if (n > 0) { off += (size_t)n; continue; }
+        if (n == 0) return ZRPC_STATUS_UNAVAILABLE;
+        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
+        return map_recv_error(errno);
+    }
+    return ZRPC_STATUS_OK;
+}
+
+/* Coroutine-only write: send() yields while the socket is not writable. */
+static int co_write_full(int fd, const void *buf, size_t len)
+{
+    const uint8_t *p = (const uint8_t *)buf;
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = send(fd, p + off, len - off, MSG_NOSIGNAL);
+        if (n > 0) { off += (size_t)n; continue; }
+        if (n == 0) return ZRPC_STATUS_UNAVAILABLE;
+        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
+        return map_send_error(errno);
+    }
+    return ZRPC_STATUS_OK;
+}
+
 static int map_recv_error(int err)
 {
     switch (err) {
@@ -98,6 +142,8 @@ int zrpc_read_full_until(int fd, void *buf, size_t len, int64_t deadline_ms)
         return ZRPC_STATUS_OK;
     if (buf == NULL)
         return ZRPC_STATUS_INVALID_ARGUMENT;
+    if (in_coroutine())
+        return co_read_full(fd, buf, len);   /* NtyCo yields; no poll, no deadline */
 
     uint8_t *p = (uint8_t *)buf;
     size_t off = 0;
@@ -149,6 +195,8 @@ int zrpc_write_full_until(int fd, const void *buf, size_t len, int64_t deadline_
         return ZRPC_STATUS_OK;
     if (buf == NULL)
         return ZRPC_STATUS_INVALID_ARGUMENT;
+    if (in_coroutine())
+        return co_write_full(fd, buf, len);  /* NtyCo yields; no poll, no deadline */
 
     const uint8_t *p = (const uint8_t *)buf;
     size_t off = 0;

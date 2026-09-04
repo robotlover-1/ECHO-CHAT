@@ -10,5 +10,7 @@
 #define ZRPC_H
 
 #include "zrpc_protocol.h"
+#include "zrpc_client.h"
+#include "zrpc_server.h"
 
 #endif /* ZRPC_H */

@@ -14,19 +14,37 @@ CC      ?= cc
 AR      ?= ar
 CFLAGS  ?= -O2 -g
 CFLAGS  += -Wall -Wextra
-CPPFLAGS += -Iinclude
-LDLIBS   = -lpthread
+CPPFLAGS += -Iinclude -Intyco -Isrc
+LDLIBS   = -lpthread -ldl
 
 BUILD_DIR    := build
 TEST_BIN_DIR := tests/bin
-HDRS := include/zrpc.h include/zrpc_protocol.h
+HDRS := include/zrpc.h include/zrpc_protocol.h \
+        include/zrpc_client.h include/zrpc_server.h \
+        ntyco/nty_coroutine.h
 
-SRCS := src/zrpc_io.c src/zrpc_frame.c src/zrpc_error.c
-OBJS := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SRCS))
-LIB  := $(BUILD_DIR)/libzrpc.a
+# src objects built under -Iinclude only; ntyco objects under -Intyco -Iinclude.
+SRCS    := src/zrpc_io.c src/zrpc_frame.c src/zrpc_error.c src/zrpc_json.c \
+           src/zrpc_client.c src/zrpc_server.c src/cJSON.c
+NYCOSRC := ntyco/nty_coroutine.c ntyco/nty_schedule.c ntyco/nty_epoll.c ntyco/nty_socket.c
+OBJS    := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SRCS))
+NYCOBJS := $(patsubst ntyco/%.c,$(BUILD_DIR)/nty_%.o,$(NYCOSRC))
+LIB     := $(BUILD_DIR)/libzrpc.a
 
-TEST_SRCS := tests/test_frame.c tests/test_io.c
+TEST_SRCS := tests/test_frame.c tests/test_io.c tests/test_json.c tests/test_unary.c
 TEST_PROGS := $(patsubst tests/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRCS))
+
+# Pure-C tests are ASan/UBSan-safe. test_unary drives the NtyCo scheduler, which
+# uses ucontext stack switching that ASan does not support (false positives), so
+# it runs only on the plain build. NtyCo memory health is covered by the load
+# test's fd/RSS canaries instead.
+PURE_TESTS := test_frame test_io test_json
+ALL_TESTS  := $(PURE_TESTS) test_unary
+ifeq (,$(findstring sanitize,$(CFLAGS)))
+RUN_TESTS := $(ALL_TESTS)
+else
+RUN_TESTS := $(PURE_TESTS)
+endif
 
 .PHONY: all test clean
 
@@ -41,14 +59,18 @@ $(TEST_BIN_DIR):
 $(BUILD_DIR)/%.o: src/%.c $(HDRS) | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-$(LIB): $(OBJS)
+$(BUILD_DIR)/nty_%.o: ntyco/%.c ntyco/nty_coroutine.h | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(LIB): $(OBJS) $(NYCOBJS)
 	$(AR) rcs $@ $^
 
 $(TEST_BIN_DIR)/%: tests/%.c $(LIB) | $(TEST_BIN_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIB) $(LDLIBS) -o $@
 
 test: $(TEST_PROGS)
-	@set -e; for t in $(TEST_PROGS); do echo "== $$t =="; ./$$t; done
+	@set -e; for t in $(foreach t,$(RUN_TESTS),$(TEST_BIN_DIR)/$(t)); do echo "== $$t =="; ./$$t; done
+	@if [ "$(RUN_TESTS)" != "$(ALL_TESTS)" ]; then echo "(sanitizer build: test_unary skipped -- NtyCo/ucontext vs ASan)"; fi
 
 clean:
 	rm -rf $(BUILD_DIR) $(TEST_BIN_DIR)

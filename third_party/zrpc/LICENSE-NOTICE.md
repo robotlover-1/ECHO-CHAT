@@ -38,8 +38,11 @@
   已成功构建 `libntyco.a` 并在 kvstore 服务中使用。
 - 许可证：wangbojing/NtyCo 未随源码提供 LICENSE 文件。
 - 授权：项目方确认可使用（第 5 节）。
-- 本项目现状：zrpc v2 **首版 server 不使用 NtyCo 编译**，采用 pthread + poll/epoll（见实施计划 §5.5），
-  以降低 cgo 回调与协程调度耦合的稳定性风险；若后续启用 NtyCo，须随代码保留来源说明。
+- 本项目现状：Task 2 决策采用 NtyCo 承担 zrpc server 的 accept/读调度（计划 §5.5 方案 B）。
+  已将其 core 源码引入本目录 `ntyco/`（随 `libzrpc.a` 一起编译，来源如上）。
+  非协程线程（Go/cgo 侧、C client）调用 `recv/send/accept/close` 会自动回退真实 libc，仅协程内表现为协程语义。
+  NtyCo 基于 ucontext 切换栈，与 ASan 不兼容（误报），内存健康改用 load 压测的 fd/RSS canary 覆盖。
+- 已知边界：跨线程关闭 fd 无法即时唤醒 NtyCo 调度线程（优雅停机推迟到 Task 8 处理）。
 
 ## 5. 授权记录
 
