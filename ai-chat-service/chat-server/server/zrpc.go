@@ -11,27 +11,49 @@ import (
 
 /*
  * zrpc v2 side of the chat service (double-stack with gRPC during the
- * observation period). The ChatCompletion business method is transport-free
- * (context + proto in/out), so the zrpc handler adapts the shared contract to
- * the existing proto request/response via protojson and reuses it unchanged.
- * Auth is enforced by the zrpc server envelope (Bearer token from config).
+ * observation period). Unary and stream both reuse the transport-agnostic
+ * business path (chatService.ChatCompletion / chatCompletionStream via the
+ * ChatStream adapter), so caching / context / keywords / DB / LLM logic is
+ * shared unchanged. Auth is enforced by the zrpc server envelope (Bearer).
  */
 
-// RegisterChatZRPC wires the chat methods on a zrpc.Server. streamOK gates
-// chat.completion_stream (Task 7); only unary is registered for Task 6.
-func RegisterChatZRPC(zsrv *zrpc.Server, chat proto.ChatServer, streamOK bool) error {
+// ChatSvc is the transport-agnostic surface served over zrpc.
+type ChatSvc interface {
+	proto.ChatServer
+	ServeChatStreamZRPC(ctx context.Context, raw json.RawMessage, w *zrpc.StreamWriter) error
+}
+
+// RegisterChatZRPC wires chat methods on a zrpc.Server.
+func RegisterChatZRPC(zsrv *zrpc.Server, chat ChatSvc, streamOK bool) error {
 	if err := zsrv.RegisterUnary(contract.MethodChatCompletion, unaryChatAdapter(chat)); err != nil {
 		return err
 	}
 	if streamOK {
-		if err := registerStreamAdapter(zsrv, chat); err != nil {
+		if err := zsrv.RegisterStream(contract.MethodChatCompletionStream, chat.ServeChatStreamZRPC); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func unaryChatAdapter(chat proto.ChatServer) zrpc.UnaryHandler {
+// ServeChatStreamZRPC streams one chat.completion_stream request over zrpc.
+func (s *chatService) ServeChatStreamZRPC(ctx context.Context, raw json.RawMessage, w *zrpc.StreamWriter) error {
+	var creq contract.ChatCompletionRequest
+	if err := json.Unmarshal(raw, &creq); err != nil {
+		return zrpc.InvalidArgument(err)
+	}
+	preq, err := protoReqFromContract(&creq)
+	if err != nil {
+		return zrpc.InvalidArgument(err)
+	}
+	zw := &zrpcChatStream{ctx: w.Context(), w: w}
+	if err := s.chatCompletionStream(preq, zw); err != nil {
+		return err // zrpc-go turns it into an ERROR frame unless already ended
+	}
+	return zw.End()
+}
+
+func unaryChatAdapter(chat ChatSvc) zrpc.UnaryHandler {
 	return func(ctx context.Context, raw json.RawMessage) (any, error) {
 		var creq contract.ChatCompletionRequest
 		if err := json.Unmarshal(raw, &creq); err != nil {
@@ -49,17 +71,8 @@ func unaryChatAdapter(chat proto.ChatServer) zrpc.UnaryHandler {
 	}
 }
 
-// registerStreamAdapter is filled in by Task 7.
-func registerStreamAdapter(zsrv *zrpc.Server, chat proto.ChatServer) error {
-	_ = zsrv
-	_ = chat
-	return nil
-}
-
-// Explicit field mapping keeps the JSON wire format Go-native (created etc. as
-// numbers). protojson would string-encode int64, diverging from the OpenAI-style
-// JSON the backend already consumes, so we do not use it here.
-
+// protoReqFromContract converts the shared contract to the gRPC proto request
+// (explicit mapping; JSON numbers stay numbers on the wire).
 func protoReqFromContract(c *contract.ChatCompletionRequest) (*proto.ChatCompletionRequest, error) {
 	out := &proto.ChatCompletionRequest{
 		Message:       c.Message,

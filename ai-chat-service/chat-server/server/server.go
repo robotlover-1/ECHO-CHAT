@@ -1,10 +1,10 @@
 package server
 
 import (
-	semcache "ai-chat-service/chat-server/semcache"
 	chat_context "ai-chat-service/chat-server/chat-context"
 	"ai-chat-service/chat-server/data"
 	metrics_bus "ai-chat-service/chat-server/metrics-bus"
+	semcache "ai-chat-service/chat-server/semcache"
 	"ai-chat-service/pkg/config"
 	"ai-chat-service/pkg/log"
 	"ai-chat-service/proto"
@@ -30,7 +30,7 @@ type chatService struct {
 	busMetrics *metrics_bus.BusMetrics
 }
 
-func NewChatService(data data.IChatRecordsData, config *config.Config, log log.ILogger, busMetrics *metrics_bus.BusMetrics) proto.ChatServer {
+func NewChatService(data data.IChatRecordsData, config *config.Config, log log.ILogger, busMetrics *metrics_bus.BusMetrics) ChatSvc {
 	return &chatService{
 		config:     config,
 		log:        log,
@@ -134,7 +134,14 @@ func (s *chatService) ChatCompletion(ctx context.Context, in *proto.ChatCompleti
 	}()
 	return res, err
 }
+
+// ChatCompletionStream is the gRPC entry; it reuses the transport-agnostic
+// business path via the gRPC ChatStream adapter.
 func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stream proto.Chat_ChatCompletionStreamServer) error {
+	return s.chatCompletionStream(in, &grpcChatStream{Chat_ChatCompletionStreamServer: stream})
+}
+
+func (s *chatService) chatCompletionStream(in *proto.ChatCompletionRequest, stream ChatStream) error {
 	redisContextCache := chat_context.NewRedisCache()
 	defer redisContextCache.Close()
 
@@ -308,7 +315,7 @@ func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stre
 // streamLLMContent 发起一次原始 SSE 流式请求，把正式 content 逐块发给客户端。
 // 不展示 reasoning_content（思考过程）；只返回累积 content、resultID、最后 finish_reason。
 // 收尾（stop/截断提示/兜底）由调用方处理，以便 content 为空时可整体重试。
-func (a *app) streamLLMContent(ctx context.Context, stream proto.Chat_ChatCompletionStreamServer, req openai.ChatCompletionRequest) (string, string, string, error) {
+func (a *app) streamLLMContent(ctx context.Context, stream ChatStream, req openai.ChatCompletionRequest) (string, string, string, error) {
 	req.Stream = true
 	httpResp, err := a.streamRawRequest(ctx, req)
 	if err != nil {

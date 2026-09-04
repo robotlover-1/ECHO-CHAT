@@ -57,3 +57,27 @@ type Usage struct {
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
 }
+
+// ---- streaming (chat.completion_stream) ----
+
+// ChatCompletionStreamResponse mirrors proto.ChatCompletionStreamResponse,
+// including the business-level source marker (cache/llm).
+type ChatCompletionStreamResponse struct {
+	ID      string                       `json:"id"`
+	Object  string                       `json:"object"`
+	Created int64                        `json:"created"`
+	Model   string                       `json:"model"`
+	Choices []ChatCompletionStreamChoice `json:"choices"`
+	Source  string                       `json:"source,omitempty"`
+}
+
+type ChatCompletionStreamChoice struct {
+	Index        int                             `json:"index"`
+	Delta        ChatCompletionStreamChoiceDelta `json:"delta"`
+	FinishReason string                          `json:"finish_reason"`
+}
+
+type ChatCompletionStreamChoiceDelta struct {
+	Content string `json:"content"`
+	Role    string `json:"role"`
+}

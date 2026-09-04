@@ -301,6 +301,7 @@ func (a *app) saveContext(value *chat_context.ChatMessage) error {
 	}
 	return nil
 }
+
 // transportZRPC reports whether a downstream dependency is configured for zrpc.
 func transportZRPC(name string) bool {
 	cnf := config.GetConfig()

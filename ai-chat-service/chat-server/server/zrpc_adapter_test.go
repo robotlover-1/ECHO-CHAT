@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"reflect"
@@ -75,6 +76,9 @@ func (f *fakeChat) ChatCompletion(_ context.Context, _ *proto.ChatCompletionRequ
 	return f.resp, nil
 }
 func (f *fakeChat) ChatCompletionStream(_ *proto.ChatCompletionRequest, _ proto.Chat_ChatCompletionStreamServer) error {
+	return status.Error(codes.Unimplemented, "stream not in task 6")
+}
+func (f *fakeChat) ServeChatStreamZRPC(_ context.Context, _ json.RawMessage, _ *zrpc.StreamWriter) error {
 	return status.Error(codes.Unimplemented, "stream not in task 6")
 }
 

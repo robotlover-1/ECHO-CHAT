@@ -58,6 +58,9 @@ func main() {
 
 	recordsData := data.NewChatRecordsData(mysql.GetDB())
 
+	// one shared service instance for both transports (same business state)
+	service := server.NewChatService(recordsData, cnf, logger, busMetrics)
+
 	// ---- zrpc v2 listener (double-stack; gRPC kept during observation) ----
 	if cnf.Server.ZrpcPort > 0 {
 		zsrv, err := zrpc.NewServer(zrpc.ServerOptions{
@@ -67,9 +70,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		chatSvc := server.NewChatService(recordsData, cnf, logger, busMetrics)
-		// streamOK=false until Task 7 wires chat.completion_stream.
-		if err := server.RegisterChatZRPC(zsrv, chatSvc, false); err != nil {
+		if err := server.RegisterChatZRPC(zsrv, service, true); err != nil {
 			log.Fatal(err)
 		}
 		if err := zsrv.Serve(); err != nil {
@@ -83,7 +84,6 @@ func main() {
 		log.Fatal(err)
 	}
 	s := grpc.NewServer(grpc.UnaryInterceptor(interceptor.UnaryAuthInterceptor), grpc.StreamInterceptor(metrics_app.NewStreamMiddleware(registry).WrapHandler()))
-	service := server.NewChatService(recordsData, cnf, logger, busMetrics)
 	proto.RegisterChatServer(s, service)
 
 	healthCheckSrv := health.NewServer()
