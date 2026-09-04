@@ -44,10 +44,12 @@ type Config struct {
 		Sensitive struct {
 			Address     string
 			AccessToken string
+			Transport   string // "grpc" (default) | "zrpc"
 		}
 		Keywords struct {
 			Address     string
 			AccessToken string
+			Transport   string // "grpc" (default) | "zrpc"
 		}
 		Tokenizer struct {
 			Address string

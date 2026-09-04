@@ -7,7 +7,8 @@
 > 来源与许可证见 [LICENSE-NOTICE.md](LICENSE-NOTICE.md)；完整方案见
 > `docs/superpowers/plans/2026-09-04-echo-chat-c-zrpc-cross-language-migration-plan.md`。
 > 当前进度：Task 0/1/2 完成（协议/帧/IO、C unary client + NtyCo server）；Task 3 完成
-> （`zrpc-go/` cgo bridge：Client.Unary / Server.RegisterUnary / handle 注册表，双向证据 + `go test -race`）。
+> （`zrpc-go/` cgo bridge）；Task 4 完成（keywords-filter 双栈 + contract + chat-service
+> `transport=grpc|zrpc` 切换，parity 黄金一致证据）。详见 `docs/zrpc-migration/`。
 
 ## 目录布局
 

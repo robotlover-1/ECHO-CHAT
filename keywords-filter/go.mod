@@ -35,3 +35,6 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+require echo-zrpc-go v0.0.0
+
+replace echo-zrpc-go => ../zrpc-go

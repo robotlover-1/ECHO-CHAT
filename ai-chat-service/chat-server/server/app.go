@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sashabaranov/go-openai"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -300,11 +301,34 @@ func (a *app) saveContext(value *chat_context.ChatMessage) error {
 	}
 	return nil
 }
+// transportZRPC reports whether a downstream dependency is configured for zrpc.
+func transportZRPC(name string) bool {
+	cnf := config.GetConfig()
+	switch name {
+	case "keywords":
+		return strings.EqualFold(cnf.DependOn.Keywords.Transport, "zrpc")
+	case "sensitive":
+		return strings.EqualFold(cnf.DependOn.Sensitive.Transport, "zrpc")
+	}
+	return false
+}
+
 func (a *app) keywords(in *proto.ChatCompletionRequest) []string {
+	cnf := config.GetConfig()
+	if transportZRPC("keywords") {
+		words, err := keywords_filter.ZRPCFindAll(context.Background(),
+			cnf.DependOn.Keywords.Address, cnf.DependOn.Keywords.AccessToken, in.Message)
+		if err != nil {
+			a.log.Error(err)
+			return []string{} // fail-open: same as the gRPC error path
+		}
+		return words
+	}
+
 	pool := keywords_filter.GetKeywordsClientPool()
 	conn := pool.Get()
 	defer pool.Put(conn)
-	accessToken := config.GetConfig().DependOn.Keywords.AccessToken
+	accessToken := cnf.DependOn.Keywords.AccessToken
 	client := keywords_proto.NewFilterClient(conn)
 	ctx := services.AppendBearerTokenToContext(context.Background(), accessToken)
 	req := &keywords_proto.FilterReq{
@@ -319,10 +343,24 @@ func (a *app) keywords(in *proto.ChatCompletionRequest) []string {
 
 }
 func (a *app) sensitive(in *proto.ChatCompletionRequest) (ok bool, msg string, err error) {
+	cnf := config.GetConfig()
+	if transportZRPC("sensitive") {
+		ok, _, err = keywords_filter.ZRPCValidate(context.Background(),
+			cnf.DependOn.Sensitive.Address, cnf.DependOn.Sensitive.AccessToken, in.Message)
+		if err != nil {
+			a.log.Error(err)
+			return false, "", err // fail-closed: same as the gRPC error path
+		}
+		if !ok {
+			msg = "触发到了知识盲区，请换个问题再问"
+		}
+		return
+	}
+
 	pool := keywords_filter.GetSensitiveClientPool()
 	conn := pool.Get()
 	defer pool.Put(conn)
-	accessToken := config.GetConfig().DependOn.Sensitive.AccessToken
+	accessToken := cnf.DependOn.Sensitive.AccessToken
 	client := keywords_proto.NewFilterClient(conn)
 	ctx := services.AppendBearerTokenToContext(context.Background(), accessToken)
 	req := &keywords_proto.FilterReq{

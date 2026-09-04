@@ -8,8 +8,10 @@ import (
 type Config struct {
 	Server struct {
 		IP          string
-		Port        int
+		Port        int // gRPC business port (kept during the observation period)
+		ZrpcPort    int // zrpc v2 business port (double-stack)
 		AccessToken string
+		HealthPort  int // 0 disables the HTTP healthz/readyz listener
 	}
 	Log struct {
 		Level   string
