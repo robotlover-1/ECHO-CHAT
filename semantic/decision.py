@@ -30,17 +30,6 @@ from parse import critical_constraints
 
 LANGSENS = {"implementation", "troubleshooting", "code_modification", "execution"}
 
-# Task4 的最小数据缺口补丁：lang_terms 库/内建实体侧已带 family（linked_list/dynamic_array/…
-# Task3 parse），但**抽象 family 概念**（alias_of 概念：linked_list/array/hash_table…）未标 family
-# （concept 命中路径 implementation_family 为 None）。为让 family_compat 的"实体↔同 family 抽象"
-# 正向对在纯 decision 内落地（受控、默认关），记 minimal 概念 id→family 提升表承载语言受限实体
-# family 的既有规范 id。仅当开关开启且该侧为 alias_of 概念（subject_kind 为空）才参与提升。
-_FAMILY_CONCEPT_LIFT = {
-    "linked_list": "linked_list",
-    "array": "dynamic_array",
-    "hash_table": "hash_table",
-}
-
 
 def _soft_fallback_enabled() -> bool:
     """soft 通道开关：SEMANTIC_SOFT_FALLBACK，默认 '0'（关闭，走保守未知拒绝）。"""
@@ -53,14 +42,9 @@ def _family_compat_enabled() -> bool:
 
 
 def _impl_family(qp):
-    """读取侧 implementation_family；alias_of 抽象概念无 family 时经 minimal 概念提升表补。
-    仅当 qp.subject_id 是 alias_of 概念(kind 空)且落在提升表才补；库/内建/类实体本身已带 family。"""
-    fam = getattr(qp, "implementation_family", None)
-    if fam:
-        return fam
-    if (getattr(qp, "subject_id", None) and getattr(qp, "subject_kind", None) is None):
-        return _FAMILY_CONCEPT_LIFT.get(qp.subject_id)
-    return None
+    """读取侧 implementation_family。概念侧（alias_of, kind 空）在 parse 概念命中路径已归一为自身 id
+    （linked_list→linked_list…），库/内建/类实体侧本体带 ent.family —— 两侧同值即同 family，无需提升表。"""
+    return getattr(qp, "implementation_family", None)
 
 
 def _family_compat(qp, cp) -> bool:

@@ -585,6 +585,16 @@ def _alias_of_only(qp):
     return getattr(qp, "subject_kind", None) is None
 
 
+def _concept_family(concept_id):
+    """alias_of 抽象 family 概念 → 其 canonical implementation-family token（实施族标签）。
+    缺省=自身 id（linked_list/hash_table…：概念即族）。唯一特例：抽象"数组/动态数组"族概念 id 为
+    `array`，而 lang 实体实现族 token 是 `dynamic_array`（concepts.json 无 dynamic_array 概念标签，
+    lang_terms family 用 dynamic_array）。family_compat 需两侧同值 → 此处把抽象族规范到实体侧 family。
+    该字段推进 key 不进 fp payload、不参与 eligible，仅决策族比较用；lang 实体路径在 parse() 末尾
+    整体覆盖为 ent['family']，故本函数只作用于 concept 命中(subject 未标 kind)路径。"""
+    return {"array": "dynamic_array"}.get(concept_id, concept_id)
+
+
 # Task3 指纹安全：语义指纹只对「alias_of 同实体 + 无 type_args + 白名单/无 namespace + 单主题且干净」
 # 的查询可直命。库/内建实体(entity_kind∈{library_type,builtin_type,class})、type_args 非空、自定义
 # namespace、multi_subject、无法解析实体 → 一律 eligible=False（只向量召回 + decision 判）。
@@ -745,7 +755,16 @@ def parse(text):
     clause_text, concept_id = _extract_subject_pair(normalized_text)
     subject_meta = {
         "subject_text": clause_text, "subject_id": concept_id,
-        "subject_kind": None, "implementation_family": None,
+        # alias_of 抽象 family 概念 → implementation_family。语义本为"每个 alias_of 概念即其自身
+        # 实现族"，使 cpp_std_list(family=linked_list) 与概念 linked_list(family=linked_list) 同 family
+        # 可在受控 family_compat 下兼容（决策层直接比较两侧 implementation_family，无补丁表）。
+        # 但 ontology 对"动态数组"命名存在冗余：lang 实体 family token=dynamic_array，而其族之抽象
+        # 概念 canonical id=array（concepts.json 无 dynamic_array 概念）。为让两侧同 family，抽象
+        # family 概念按 canonical「实现族 token」取：linked_list/hash_table 为自身 id（一致），
+        # array→其实现族 token dynamic_array。仅影响该字段：implementation_family 不进 fp payload、
+        # eligible 判定不变（lang_terms 实体路径随后整体覆盖本 dict 的 family=ent['family']）。
+        "subject_kind": None,
+        "implementation_family": _concept_family(concept_id) if concept_id else None,
         "namespace": None, "type_args": (),
         "matched_surface": clause_text, "multi_subject": False,
         "reason": None, "source": "concept" if concept_id else "none",

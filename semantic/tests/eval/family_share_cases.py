@@ -15,10 +15,10 @@ family、均无模板 type_args、非 multi_subject、意图均 ∈ {implementat
 decision(hard_decide_verbose) 当下的真值过滤收录，只保留确实命中预期极性者——确定性、无假样本、
 不使用任何 nuxt/在线服务。import 本模块默认把 decision 侧 env 归位为默认关，不改持久态。
 
-注意点（数据缺口补丁）：lang_terms 库/内建实体侧已带 family，但抽象概念(alias_of linked_list/array/
-hash_table…) parse 未标 family（None）；decision._FAMILY_CONCEPT_LIFT 在 family_compat 开启时把少量
-家族抽象概念映射回既有 family id，故正例"实体↔其抽象"才可触及 family 短接。本集依赖该 minimal 补丁。
-"""
+结构：lang_terms 库/内建实体侧已带 family（linked_list/dynamic_array/…）；抽象 alias_of 概念
+（链表/数组·动态数组/哈希表…）在 parse 概念命中路径已标 implementation_family：缺省为自身 id，
+抽象「数组」族特例规范到 lang 侧 family token dynamic_array（ontology 命名冗余，见 parse 注释），
+故"实体↔其抽象"正例两侧同 family，无需 decision 层补丁表即可触及 family 短接。"""
 import os
 import sys as _sys
 
