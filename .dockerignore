@@ -1,0 +1,16 @@
+# 仓库根 build context 时排除大目录/无关内容，避免超大 context
+.git
+kvstore
+semantic
+ai-chat-web
+tokenizer
+mock-openai-api
+openai-api-proxy
+bin
+runtime
+docs
+configs
+*.log
+**/runtime
+**/build
+third_party/zrpc/build
