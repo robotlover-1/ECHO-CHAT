@@ -27,6 +27,39 @@
 | `fingerprint_eligible` | 保守准入：subject_id 有、intent 非 unknown、非 bypass、无残差 |
 | `parser_version` / `ontology_version` | v1 / 版本号 |
 
+## 术语识别（Task3 术语实体化；Term Recognition）
+
+`subject_id` 不是平铺的别名表，而是**分层主体识别**：同一组词语按语境升到“抽象本体概念”或“语言受限实体”，
+二者是不同的 `subject_id`、不同的复用口径。
+
+**三层主体（识别顺序，恰一层为主）：**
+
+1. **alias_of 本体概念**（全局、语言无关、`ontology/concepts.json`）：`红黑树/rbtree/red black tree/…` → `red_black_tree`（简称/中英/复数别名→同一 id）。走概念路径者 `subject_kind=None`，**可进指纹**。
+2. **alias_of 抽象 family 概念 → 其“实现族” token**：仅影响内部 `implementation_family`（比较用），不进指纹 payload、不影响 eligible；`array` 族专门规范到 lang 侧 token `dynamic_array`（两侧同 family，供受控 family_compat）。
+3. **语言受限库/内建/类实体**（`ontology/lang_terms.json`：cpp `list`→`cpp_std_list`、cpp `vector<int>`→`cpp_std_vector(int)`、python `list`→`python_builtin_list`、java `List`→**ambiguous**…）。仅在**检测到该语言**时尝试，编 `subject_kind ∈ {library_type, builtin_type, class}`、`namespace`（实体表记 `std` 白名单）、`type_args`（`std::vector<int>` 的 `<int>`）。
+
+**唯一性/多主题：** 同一 span 命中 ≥2 个不同实体（如 `list 和 vector`）→ `multi_subject=True`（subject 置 None，fingerprint_eligible=False）。同长多命中歧义→保守 None。
+
+**语言门控（`detect_language`/`extract_language`）：**
+- 强 token（python/c++/rust/objective-c/…）直接判；短别名（py/js/ts/java…）跟随拼写；
+- 弱词 `go/swift/ruby` 单现须命中编程/技术锚点才判语言，否则保守放弃（`go to the next step`、`a swift response` → 无语言）；
+- 白名单 namespace 代码形态 `std::<ident>` → 无口语语言词也判 cpp；≥2 种并存 → 无语言（None）。
+- `c`（语言）仅 `c语言` 或紧跟实现语境；不吞 `c++`、`java` 不吞 `javascript`。
+- 无语言歧义词（`写一个 list`）、**自定义非白名单 namespace**（`company::list`）：不识别 → subject None → 走 decision `unknown_subject`。
+
+**指纹安全门（只有 alias_of 概念能直命指纹；`parse.py::_fingerprint_eligible`）：**
+- **仅 alias_of（abstract）subject 进指纹**；库/内建/实体（library_type/builtin_type/class）一律 `fingerprint_eligible=False` —— 只走向量 + decision，不因"库相关常见/近文本"而被 fp 快路径直命放大。
+- **type_args（模板实参）非空 → False**（模板是硬约束，不直命）；
+- **多主题 / subject 未解析 → False**；
+- 语言已知但实体表 ambiguous/未映射（java `List`）→ subject None、False。
+- `namespace` 非 `std`（自定义/无 whitelist）→ False。
+
+跨改写命中口径：同主体复写的真命中有两条路——指纹直命（alias_of 概念，同 fp payload 才同指纹：subject+intent+lang+op+output_type+residual 全同）或 VSEARCH+decision 纯规则复核（实体/带模板走此处，`family_compat` 受控跨实体共享见 Task4，默认关）。语义是否等价的最终判定在 decision，指纹只是安全快路径。
+
+**版本：** 指纹 payload 携带 `parser_version=.../ontology_version/lang_terms_version` 三元 → 本体或术语表升级后旧指纹成孤儿，不会跨版混用；版本字段随 `concepts.json`/`lang_terms.json`/parse.py 演进。
+
+验证集：`semantic/tests/eval/term_entity_cases.py`（RECOGNIZE/MISS/REJECT_PAIRS/FP_ELIGIBLE_SAFE 四段）逐条走完整 parse 断言识别+边界，E2E 段断 parse→fp→decision（fp 相等、eligible gate、family 开关、跨改写 shared）。
+
 ## /v1/decision[/batch] 说明（POST；Go 一次嵌入后对该批候选纯规则复核，不再逐候选 /rerank）
 - `/v1/decision` 入参 `{query, cached_query}` → `{code, shared, reason, soft}`；`/v1/decision/batch` 入参
   `{query, candidates:[...]}` → `{code, results:[{cached_query, shared, reason, soft}]}`（go 向量路径一次 HTTP 复核 topK）。
