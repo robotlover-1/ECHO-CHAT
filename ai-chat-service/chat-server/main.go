@@ -11,6 +11,7 @@ import (
 	"ai-chat-service/pkg/db/redis"
 	"ai-chat-service/pkg/log"
 	"ai-chat-service/proto"
+	zrpc "echo-zrpc-go"
 	"flag"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,6 +57,26 @@ func main() {
 	redis.InitRedisPool(cnf)
 
 	recordsData := data.NewChatRecordsData(mysql.GetDB())
+
+	// ---- zrpc v2 listener (double-stack; gRPC kept during observation) ----
+	if cnf.Server.ZrpcPort > 0 {
+		zsrv, err := zrpc.NewServer(zrpc.ServerOptions{
+			Address:     fmt.Sprintf("%s:%d", cnf.Server.IP, cnf.Server.ZrpcPort),
+			AccessToken: cnf.Server.AccessToken,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		chatSvc := server.NewChatService(recordsData, cnf, logger, busMetrics)
+		// streamOK=false until Task 7 wires chat.completion_stream.
+		if err := server.RegisterChatZRPC(zsrv, chatSvc, false); err != nil {
+			log.Fatal(err)
+		}
+		if err := zsrv.Serve(); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("[zrpc] listening on %s:%d\n", cnf.Server.IP, cnf.Server.ZrpcPort)
+	}
 
 	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cnf.Server.IP, cnf.Server.Port))
 	if err != nil {

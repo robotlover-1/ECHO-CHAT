@@ -8,7 +8,8 @@ import (
 type Config struct {
 	Server struct {
 		IP          string
-		Port        int
+		Port        int // gRPC business port (kept during the observation period)
+		ZrpcPort    int // zrpc v2 business port (double-stack)
 		AccessToken string
 	}
 	Log struct {
@@ -69,9 +70,9 @@ type Config struct {
 		IdleConnTimeout    int
 	}
 	SemanticCache struct {
-		Enabled                 bool    `mapstructure:"enabled"`
+		Enabled bool `mapstructure:"enabled"`
 		// Deprecated: Phase-1 阈值,仅兼容读取,不再参与新(e5/批决策)链路。
-		Threshold               float32 `mapstructure:"threshold"`
+		Threshold float32 `mapstructure:"threshold"`
 		// Deprecated: Phase-1 rerank 阈值,仅兼容读取,不再参与新链路。/rerank 已废弃且 score 恒 0。
 		RerankThreshold         float32 `mapstructure:"rerank_threshold"`
 		ExactFingerprintEnabled bool    `mapstructure:"exact_fingerprint_enabled"`
