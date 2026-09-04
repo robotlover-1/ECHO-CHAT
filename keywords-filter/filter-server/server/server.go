@@ -1,41 +1,24 @@
 package server
 
 import (
-	"context"
-
 	zrpc "echo-zrpc-go"
 	"keywords-filter/pkg/filter"
-	"keywords-filter/proto"
 )
 
+/*
+ * filterService：keywords-filter 业务（敏感词/关键词），gRPC 已删除，仅经 zrpc v2 提供
+ * （RegisterZRPC → contract.filter.validate / filter.find_all）。业务 IFilter 不变。
+ */
+
 type filterService struct {
-	proto.UnimplementedFilterServer
 	filter filter.IFilter
 }
 
-// FilterService is the transport-agnostic surface of the filter service: the
-// same instance can be registered on both gRPC (proto.FilterServer) and zrpc.
+// FilterService 是 zrpc 单传输出口：注册到 *zrpc.Server 即可提供服务。
 type FilterService interface {
-	proto.FilterServer
 	RegisterZRPC(zsrv *zrpc.Server) error
 }
 
 func NewFilterService(filter filter.IFilter) FilterService {
-	return &filterService{
-		filter: filter,
-	}
-}
-
-func (s *filterService) Validate(_ context.Context, in *proto.FilterReq) (*proto.ValidateRes, error) {
-	ok, word := s.filter.Validate(in.Text)
-	return &proto.ValidateRes{
-		Ok:      ok,
-		Keyword: word,
-	}, nil
-}
-func (s *filterService) FindAll(_ context.Context, in *proto.FilterReq) (*proto.FindAllRes, error) {
-	words := s.filter.FindAll(in.Text)
-	return &proto.FindAllRes{
-		Keywords: words,
-	}, nil
+	return &filterService{filter: filter}
 }

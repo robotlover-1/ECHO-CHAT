@@ -3,31 +3,23 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"sync/atomic"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/health/grpc_health_v1"
-
 	zrpc "echo-zrpc-go"
-	"keywords-filter/filter-server/interceptor"
 	"keywords-filter/filter-server/server"
 	"keywords-filter/pkg/config"
 	"keywords-filter/pkg/filter"
 	"keywords-filter/pkg/log"
-	"keywords-filter/proto"
 )
 
 var (
 	configFile = flag.String("config", "dev.config.yaml", "")
 	dictFile   = flag.String("dict", "dict.txt", "")
 	formatDict = flag.Bool("format", false, "")
+	// ready 置真表示 zrpc 监听已就绪，供 /readyz 探活。
+	ready atomic.Bool
 )
-
-// ready flips once both listeners are bound.
-var ready atomic.Bool
 
 func main() {
 	flag.Parse()
@@ -43,48 +35,28 @@ func main() {
 	log.SetPrintCaller(true)
 	filter.InitFilter(*dictFile)
 
-	// ---- zrpc v2 listener (double-stack; gRPC kept during observation) ----
-	if cnf.Server.ZrpcPort > 0 {
-		zsrv, err := zrpc.NewServer(zrpc.ServerOptions{
-			Address:     fmt.Sprintf("%s:%d", cnf.Server.IP, cnf.Server.ZrpcPort),
-			AccessToken: cnf.Server.AccessToken,
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-		service := server.NewFilterService(filter.GetFilter())
-		if err := service.RegisterZRPC(zsrv); err != nil {
-			log.Fatal(err)
-		}
-		if err := zsrv.Serve(); err != nil {
-			log.Fatal(err)
-		}
-		log.InfoF("zrpc listening on %s:%d", cnf.Server.IP, cnf.Server.ZrpcPort)
-	}
-
-	// ---- gRPC listener (unchanged for the observation period) ----
-	lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cnf.Server.IP, cnf.Server.Port))
+	// 单 zrpc 传输（gRPC 已删）：业务端口即 cnf.Server.Port（50053/50054）
+	zsrv, err := zrpc.NewServer(zrpc.ServerOptions{
+		Address:     fmt.Sprintf("%s:%d", cnf.Server.IP, cnf.Server.Port),
+		AccessToken: cnf.Server.AccessToken,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	s := grpc.NewServer(grpc.UnaryInterceptor(interceptor.UnaryAuthInterceptor))
 	service := server.NewFilterService(filter.GetFilter())
-	proto.RegisterFilterServer(s, service)
+	if err := service.RegisterZRPC(zsrv); err != nil {
+		log.Fatal(err)
+	}
+	if err := zsrv.Serve(); err != nil {
+		log.Fatal(err)
+	}
+	ready.Store(true)
+	log.InfoF("zrpc listening on %s:%d", cnf.Server.IP, cnf.Server.Port)
 
-	healthCheckSrv := health.NewServer()
-	grpc_health_v1.RegisterHealthServer(s, healthCheckSrv)
-	healthCheckSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
-
-	// ---- HTTP healthz/readyz (replaces grpc_health_probe for zrpc) ----
 	if cnf.Server.HealthPort > 0 {
 		go serveHealth(cnf.Server.HealthPort)
 	}
-
-	ready.Store(true)
-	log.InfoF("gRPC listening on %s:%d", cnf.Server.IP, cnf.Server.Port)
-	if err = s.Serve(lis); err != nil {
-		log.Fatal(err)
-	}
+	select {} // zrpc server 协程在独立线程，主线程保持存活
 }
 
 func serveHealth(port int) {
