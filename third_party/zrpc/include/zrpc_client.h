@@ -56,6 +56,25 @@ int zrpc_client_call_unary(zrpc_client_t *client,
 /* Round-trip PING/PONG on a fresh short-lived connection. */
 int zrpc_client_ping(zrpc_client_t *client, int timeout_ms);
 
+/*
+ * Blocking server-streaming call (Task 5). Each call uses a DEDICATED TCP
+ * connection, so a slow stream never head-of-line-blocks another request. The
+ * C callback is invoked for every event and must copy data before returning.
+ * Returns OK after STREAM_END, the zrpc error code after an ERROR frame,
+ * CANCELLED if zrpc_client_cancel() is called from another thread, or the IO
+ * status when the connection dies.
+ */
+int zrpc_client_call_stream(zrpc_client_t *client,
+                            const char *method,
+                            const void *req_json,
+                            uint32_t req_len,
+                            uint64_t deadline_unix_ms,
+                            uint64_t callback_handle,
+                            zrpc_stream_callback_t callback);
+
+/* Ask an in-flight zrpc_client_call_stream to stop (wakes its blocked read). */
+void zrpc_client_cancel(zrpc_client_t *client);
+
 /* Close the underlying connection(s); safe to call multiple times. */
 void zrpc_client_close(zrpc_client_t *client);
 void zrpc_client_free(zrpc_client_t *client);

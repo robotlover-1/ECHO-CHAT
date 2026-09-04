@@ -71,6 +71,10 @@ struct zrpc_server {
     pthread_mutex_t method_lock;
     zrpc_method_t *methods;
 
+    /* connection-close notification (bridge uses it to cancel streams) */
+    uint64_t conn_close_handle;
+    zrpc_conn_close_cb_t conn_close_cb;
+
     char    err[256];
 };
 
@@ -193,6 +197,37 @@ int zrpc_server_send_error(zrpc_server_t *s, int client_fd, uint64_t request_id,
     return st;
 }
 
+/* Stream chunks are wrapped like unary responses: {"payload": <chunk>}. */
+int zrpc_server_send_stream_data(zrpc_server_t *s, int client_fd, uint64_t request_id,
+                                 const void *data, uint32_t data_len)
+{
+    if (!s) return ZRPC_STATUS_INVALID_ARGUMENT;
+    zrpc_buffer_t wrapped = { NULL, 0, 0 };
+    int st = zrpc_json_wrap_payload(data, data_len, &wrapped);
+    if (st != ZRPC_STATUS_OK) return st;
+
+    zrpc_buffer_t frame = { NULL, 0, 0 };
+    st = zrpc_frame_encode(ZRPC_MSG_STREAM_DATA, request_id, wrapped.data, wrapped.len, &frame);
+    zrpc_buffer_free(&wrapped);
+    if (st != ZRPC_STATUS_OK) return st;
+
+    st = send_frame(s, client_fd, &frame);
+    zrpc_buffer_free(&frame);
+    return st;
+}
+
+int zrpc_server_send_stream_end(zrpc_server_t *s, int client_fd, uint64_t request_id)
+{
+    if (!s) return ZRPC_STATUS_INVALID_ARGUMENT;
+    zrpc_buffer_t frame = { NULL, 0, 0 };
+    int st = zrpc_frame_encode(ZRPC_MSG_STREAM_END, request_id, NULL, 0, &frame);
+    if (st != ZRPC_STATUS_OK) return st;
+
+    st = send_frame(s, client_fd, &frame);
+    zrpc_buffer_free(&frame);
+    return st;
+}
+
 /* ---- auth + dispatch (runs inside the conn_reader coroutine) ---- */
 
 static int authenticate(zrpc_server_t *s, const char *auth)
@@ -296,7 +331,9 @@ static void conn_reader(void *arg)
         break;   /* protocol error: drop the connection */
     }
 
-    /* tear down */
+    /* tear down: notify the bridge so in-flight stream handlers get cancelled */
+    if (s->conn_close_cb)
+        s->conn_close_cb(s->conn_close_handle, conn->fd);
     close(conn->fd);
     conn_unlink_free(s, conn->fd);
 }
@@ -384,6 +421,15 @@ int zrpc_server_register(zrpc_server_t *s, const char *method, int is_stream,
     m->next = s->methods;
     s->methods = m;
     pthread_mutex_unlock(&s->method_lock);
+    return ZRPC_STATUS_OK;
+}
+
+int zrpc_server_set_conn_close_cb(zrpc_server_t *s, uint64_t cb_handle,
+                                  zrpc_conn_close_cb_t cb)
+{
+    if (!s) return ZRPC_STATUS_INVALID_ARGUMENT;
+    s->conn_close_handle = cb_handle;
+    s->conn_close_cb = cb;
     return ZRPC_STATUS_OK;
 }
 

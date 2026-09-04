@@ -85,6 +85,31 @@ int zrpc_server_send_error(zrpc_server_t *server,
                            int code,
                            const char *message);
 
+/* ---- streaming replies (Task 5): one terminal (STREAM_END or ERROR) ---- */
+
+/* Push one STREAM_DATA frame (data is a JSON chunk, verbatim). */
+int zrpc_server_send_stream_data(zrpc_server_t *server,
+                                 int client_fd,
+                                 uint64_t request_id,
+                                 const void *data,
+                                 uint32_t data_len);
+
+/* Close the stream with STREAM_END (empty payload). */
+int zrpc_server_send_stream_end(zrpc_server_t *server,
+                                int client_fd,
+                                uint64_t request_id);
+
+/*
+ * Connection-close notification (Task 5): when a connection is torn down the
+ * optional callback fires with client_fd so the Go bridge can cancel any
+ * in-flight stream handlers. cb_handle is passed through untouched.
+ */
+typedef void (*zrpc_conn_close_cb_t)(uint64_t cb_handle, int client_fd);
+
+int zrpc_server_set_conn_close_cb(zrpc_server_t *server,
+                                  uint64_t cb_handle,
+                                  zrpc_conn_close_cb_t cb);
+
 #ifdef __cplusplus
 }
 #endif

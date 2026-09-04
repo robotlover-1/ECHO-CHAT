@@ -50,10 +50,10 @@ var (
 	nextHandle atomic.Uint64
 )
 
-func handleAdd(h UnaryHandler, s *Server) uint64 {
+func handleAdd(fn any, s *Server) uint64 {
 	id := nextHandle.Add(1)
 	handlesMu.Lock()
-	handles[id] = &handlerEntry{fn: h, srv: s}
+	handles[id] = &handlerEntry{fn: fn, srv: s}
 	handlesMu.Unlock()
 	return id
 }
@@ -89,6 +89,9 @@ type Server struct {
 	jobs   chan requestJob
 	done   chan struct{}
 	wg     sync.WaitGroup
+
+	streamsMu   sync.Mutex
+	streamsByFD map[int]*StreamWriter
 }
 
 type requestJob struct {
@@ -122,18 +125,28 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	}
 
 	s := &Server{
-		c:    csrv,
-		jobs: make(chan requestJob, 1024),
-		done: make(chan struct{}),
+		c:           csrv,
+		jobs:        make(chan requestJob, 1024),
+		done:        make(chan struct{}),
+		streamsByFD: map[int]*StreamWriter{},
 	}
 	return s, nil
 }
 
+// RegisterStream registers a server-streaming handler under method.
+func (s *Server) RegisterStream(method string, h StreamHandler) error {
+	return s.register(method, h, 1)
+}
+
 // RegisterUnary registers a unary handler under method.
 func (s *Server) RegisterUnary(method string, h UnaryHandler) error {
-	id := handleAdd(h, s)
+	return s.register(method, h, 0)
+}
+
+func (s *Server) register(method string, fn any, isStream int) error {
+	id := handleAdd(fn, s)
 	cm := C.CString(method)
-	st := C.zrpc_bridge_register(s.c, cm, 0, C.uint64_t(id))
+	st := C.zrpc_bridge_register(s.c, cm, C.int(isStream), C.uint64_t(id))
 	C.free(unsafe.Pointer(cm))
 	if st != C.ZRPC_STATUS_OK {
 		handlesMu.Lock()
@@ -149,6 +162,8 @@ func (s *Server) Serve() error {
 	if st := C.zrpc_server_serve(s.c); st != C.ZRPC_STATUS_OK {
 		return &StatusError{Code: Code(int(st)), Message: "serve failed"}
 	}
+	C.zrpc_bridge_set_conn_close(s.c) // stream handlers cancelled on disconnect
+	serverAdd(s)
 	for i := 0; i < 8; i++ {
 		s.wg.Add(1)
 		go s.worker()
@@ -170,12 +185,17 @@ func (s *Server) worker() {
 
 func (s *Server) runJob(j requestJob) {
 	entry := j.entry
-	unary, ok := entry.fn.(UnaryHandler)
-	if !ok {
-		s.sendErr(j.fd, j.rid, CodeInternal, "method is not a unary handler")
-		return
+	switch fn := entry.fn.(type) {
+	case UnaryHandler:
+		s.runUnary(j, fn)
+	case StreamHandler:
+		go s.runStream(j, fn) // long-running: hand off to its own goroutine
+	default:
+		s.sendErr(j.fd, j.rid, CodeInternal, "unregistered handler kind")
 	}
+}
 
+func (s *Server) runUnary(j requestJob, unary UnaryHandler) {
 	ctx := context.Background()
 	if j.deadline > 0 {
 		var cancel context.CancelFunc
@@ -262,7 +282,8 @@ func goZRPCDispatchRequest(handle C.uint64_t, rid C.uint64_t, fd C.int,
 }
 
 // Close stops accepting (best effort; the NtyCo scheduler thread is torn down
-// in Task 8) and releases Go-side handles/workers so the registry empties.
+// in Task 8), cancels in-flight streams and releases Go-side handles/workers so
+// the registry empties.
 func (s *Server) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -273,6 +294,8 @@ func (s *Server) Close() error {
 	s.mu.Unlock()
 
 	C.zrpc_server_shutdown(s.c)
+	serverRemove(s)
+	s.cancelAllStreams()
 	close(s.done)
 	s.wg.Wait()
 	handleClearFor(s)

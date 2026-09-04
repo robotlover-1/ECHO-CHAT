@@ -29,10 +29,13 @@ type ClientOptions struct {
 
 // Client is a thin cgo wrapper over the C zrpc unary client.
 type Client struct {
-	mu   sync.Mutex
-	ptr  *C.zrpc_client_t
-	host string
-	port int
+	mu               sync.Mutex
+	ptr              *C.zrpc_client_t
+	host             string
+	port             int
+	token            string
+	connectTimeoutMs int
+	ioTimeoutMs      int
 }
 
 // NewClient connects lazily on the first call (the C client dials on demand).
@@ -40,7 +43,13 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	if opts.Host == "" {
 		return nil, fmt.Errorf("zrpc: empty host")
 	}
-	c := &Client{host: opts.Host, port: opts.Port}
+	c := &Client{
+		host:             opts.Host,
+		port:             opts.Port,
+		token:            opts.Token,
+		connectTimeoutMs: opts.ConnectTimeoutMs,
+		ioTimeoutMs:      opts.IOTimeoutMs,
+	}
 	ch := C.CString(opts.Host)
 	var tok *C.char
 	if opts.Token != "" {

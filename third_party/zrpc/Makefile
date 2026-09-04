@@ -31,7 +31,7 @@ OBJS    := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 NYCOBJS := $(patsubst ntyco/%.c,$(BUILD_DIR)/nty_%.o,$(NYCOSRC))
 LIB     := $(BUILD_DIR)/libzrpc.a
 
-TEST_SRCS := tests/test_frame.c tests/test_io.c tests/test_json.c tests/test_unary.c
+TEST_SRCS := tests/test_frame.c tests/test_io.c tests/test_json.c tests/test_unary.c tests/test_stream.c
 TEST_PROGS := $(patsubst tests/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRCS))
 
 # Pure-C tests are ASan/UBSan-safe. test_unary drives the NtyCo scheduler, which
@@ -39,7 +39,7 @@ TEST_PROGS := $(patsubst tests/%.c,$(TEST_BIN_DIR)/%,$(TEST_SRCS))
 # it runs only on the plain build. NtyCo memory health is covered by the load
 # test's fd/RSS canaries instead.
 PURE_TESTS := test_frame test_io test_json
-ALL_TESTS  := $(PURE_TESTS) test_unary
+ALL_TESTS  := $(PURE_TESTS) test_unary test_stream
 ifeq (,$(findstring sanitize,$(CFLAGS)))
 RUN_TESTS := $(ALL_TESTS)
 else

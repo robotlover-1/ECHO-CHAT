@@ -22,6 +22,19 @@ extern "C" {
 int zrpc_bridge_register(zrpc_server_t *server, const char *method, int is_stream,
                          uint64_t handler_handle);
 
+/* Server: route connection-close to the Go export goZRPCOnConnClosed. */
+int zrpc_bridge_set_conn_close(zrpc_server_t *server);
+
+/*
+ * Client: blocking server-stream call that routes every event to the Go export
+ * goZRPCOnStreamEvent. Uses zrpc_bridge_stream_cb as the C callback.
+ */
+int zrpc_bridge_call_stream(zrpc_client_t *client, const char *method,
+                            const void *request, uint32_t request_len,
+                            uint64_t deadline_unix_ms, uint64_t callback_handle);
+
+void zrpc_bridge_cancel(zrpc_client_t *client);
+
 /*
  * Called by libzrpc on a validated REQUEST frame. Copies the payload and calls
  * the Go export goZRPCDispatchRequest; the Go side must copy data during the

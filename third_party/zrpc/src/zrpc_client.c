@@ -35,7 +35,9 @@ struct zrpc_client {
     int     connect_timeout_ms;
     int     io_timeout_ms;
 
-    int     fd;             /* current connection, -1 when closed */
+    int     fd;             /* reusable unary connection, -1 when closed */
+    int     stream_fd;      /* dedicated stream connection while call_stream runs */
+    volatile int cancelled; /* set by zrpc_client_cancel() */
     uint64_t next_id;       /* request id source */
 
     char    err[256];
@@ -52,10 +54,15 @@ static void set_err(zrpc_client_t *c, const char *fmt, ...)
 
 static void client_reset(zrpc_client_t *c)
 {
+    if (c->stream_fd >= 0) {
+        close(c->stream_fd);
+        c->stream_fd = -1;
+    }
     if (c->fd >= 0) {
         close(c->fd);
         c->fd = -1;
     }
+    c->cancelled = 0;
 }
 
 /* ---- connect with timeout (non-blocking connect + poll) ---- */
@@ -145,6 +152,8 @@ zrpc_client_t *zrpc_client_new(const char *host, uint16_t port, const char *toke
     c->connect_timeout_ms = connect_timeout_ms > 0 ? connect_timeout_ms : 3000;
     c->io_timeout_ms = io_timeout_ms > 0 ? io_timeout_ms : (int)ZRPC_DEFAULT_TIMEOUT_MS;
     c->fd = -1;
+    c->stream_fd = -1;
+    c->cancelled = 0;
     c->next_id = 1;
     c->err[0] = '\0';
     return c;
@@ -270,4 +279,119 @@ int zrpc_client_call_unary(zrpc_client_t *c, const char *method,
 
     if (result == ZRPC_STATUS_UNAVAILABLE) client_reset(c);
     return result;
+}
+
+/* ---- streaming (Task 5) ---- */
+
+void zrpc_client_cancel(zrpc_client_t *c)
+{
+    if (!c) return;
+    c->cancelled = 1;
+    __sync_synchronize();
+    /* SHUT_RDWR wakes a blocking recv on the stream fd without closing it, so
+     * no fd-number reuse race while the stream goroutine is still in C. */
+    int fd = c->stream_fd >= 0 ? c->stream_fd : c->fd;
+    if (fd >= 0)
+        shutdown(fd, SHUT_RDWR);
+}
+
+int zrpc_client_call_stream(zrpc_client_t *c, const char *method,
+                            const void *req_json, uint32_t req_len,
+                            uint64_t deadline_unix_ms, uint64_t callback_handle,
+                            zrpc_stream_callback_t callback)
+{
+    if (!c || !method || !callback) return ZRPC_STATUS_INVALID_ARGUMENT;
+
+    /* Streams use a DEDICATED connection (never the reusable unary fd). */
+    int fd = open_tcp(c->host, c->port, c->connect_timeout_ms, c->err, sizeof(c->err));
+    if (fd < 0) return ZRPC_STATUS_UNAVAILABLE;
+    c->stream_fd = fd;
+    c->cancelled = 0;
+
+    char auth[320];
+    if (c->token[0])
+        snprintf(auth, sizeof(auth), "Bearer %s", c->token);
+    else
+        auth[0] = '\0';
+
+    zrpc_buffer_t env = { NULL, 0, 0 };
+    int st = zrpc_json_build_request(method, auth, (int64_t)deadline_unix_ms,
+                                     req_json, req_len, &env);
+    if (st == ZRPC_STATUS_OK) {
+        uint64_t rid = c->next_id++;
+        zrpc_buffer_t frame = { NULL, 0, 0 };
+        st = zrpc_frame_encode(ZRPC_MSG_REQUEST, rid, env.data, env.len, &frame);
+        zrpc_buffer_free(&env);
+        if (st == ZRPC_STATUS_OK) {
+            st = zrpc_write_full(fd, frame.data, frame.len, c->io_timeout_ms);
+            zrpc_buffer_free(&frame);
+        }
+        if (st != ZRPC_STATUS_OK) {
+            set_err(c, "stream write: %s", zrpc_status_str(st));
+            goto done;
+        }
+
+        /* Read events until a terminal STREAM_END or ERROR. */
+        int terminal = 0;
+        while (!terminal) {
+            zrpc_frame_t f;
+            int rs = zrpc_frame_read(fd, &f, c->io_timeout_ms);
+            if (rs != ZRPC_STATUS_OK) {
+                if (c->cancelled) st = ZRPC_STATUS_CANCELLED;
+                else { st = rs; set_err(c, "stream read: %s", zrpc_status_str(rs)); }
+                break;
+            }
+            if (f.request_id != rid) {   /* not our stream: protocol noise */
+                zrpc_frame_free(&f);
+                st = ZRPC_STATUS_PROTOCOL_ERROR;
+                break;
+            }
+            switch (f.type) {
+            case ZRPC_MSG_STREAM_DATA: {
+                /* frames carry {"payload": <chunk>}; hand the chunk out unwrapped */
+                zrpc_buffer_t inner = { NULL, 0, 0 };
+                const void *data = f.payload;
+                uint32_t dlen = f.length;
+                if (zrpc_json_unwrap_payload(f.payload, f.length, &inner) == ZRPC_STATUS_OK) {
+                    data = inner.data;
+                    dlen = inner.len;
+                }
+                callback(callback_handle, rid, ZRPC_MSG_STREAM_DATA, 0, data, dlen);
+                zrpc_buffer_free(&inner);
+                zrpc_frame_free(&f);
+                continue;
+            }
+            case ZRPC_MSG_STREAM_END:
+                callback(callback_handle, rid, ZRPC_MSG_STREAM_END, 0, NULL, 0);
+                zrpc_frame_free(&f);
+                st = ZRPC_STATUS_OK;
+                terminal = 1;
+                break;
+            case ZRPC_MSG_ERROR:
+                {
+                    int code = ZRPC_STATUS_INTERNAL;
+                    char *msg = NULL;
+                    if (zrpc_json_parse_error(f.payload, f.length, &code, &msg, NULL) == ZRPC_STATUS_OK) {
+                        if (msg) { set_err(c, "%s", msg); free(msg); }
+                    }
+                    callback(callback_handle, rid, ZRPC_MSG_ERROR, code, f.payload, f.length);
+                    st = code;
+                    terminal = 1;
+                    zrpc_frame_free(&f);
+                }
+                break;
+            default:
+                zrpc_frame_free(&f);
+                st = ZRPC_STATUS_PROTOCOL_ERROR;
+                set_err(c, "stream: unexpected frame type");
+                terminal = 1;
+                break;
+            }
+        }
+    }
+done:
+    if (fd >= 0) close(fd);
+    c->stream_fd = -1;
+    __sync_synchronize();
+    return st;
 }
