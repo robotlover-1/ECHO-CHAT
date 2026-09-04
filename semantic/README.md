@@ -47,6 +47,22 @@
   upstream_revision/onnxruntime_version/quantization_config/model_sha256/…）；`onnx-fp32/` 为 FP32 对照。
 - 池化与 `tools/verify_consistency.py` 一致：token 输出 `token_embeddings` 按 `attention_mask` 真实 token
   平均（除以 mask 和）再 L2。pad 以模型 pad token(=1, `<pad>`) 对齐 transformers/PT。
+- `onnx-fp32/` 仅为导出/一致性校验对照，**运行时只需** `model.onnx`(INT8) + `tokenizer.json`(+MANIFEST)。
+
+### 获取模型（fresh clone 后 / 换机器）
+模型目录 **gitignored**、不在仓库内。缺失时服务能启动，但 `/embed` 500 → 语义缓存 miss（聊天不受影响）。三种方式：
+
+1. **一键下载+校验（推荐）**：`bash semantic/tools/fetch_model.sh`
+   （从 GitHub Release `models-e5s-v1` 下载 tar.gz 并按 MANIFEST 校验 sha256）
+2. **手动 curl**：
+   ```bash
+   curl -fL -o /tmp/e5s.tar.gz \
+     https://github.com/robotlover-1/ECHO-CHAT/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz
+   mkdir -p semantic/models/e5s-v1 && tar -xzf /tmp/e5s.tar.gz -C semantic/models/e5s-v1 --strip-components=1
+   ```
+3. **从开发机拷贝** `semantic/models/e5s-v1/`（重新导出见 `tools/export_e5_onnx.py`，需一次性 venv + torch）。
+
+`./start.sh` 缺模型时也会打印上述提示；设 `ECHO_FETCH_MODEL=1 ./start.sh` 可自动下载。
 
 ## 服务启动（nuxt）
 ```bash
@@ -57,11 +73,17 @@ SEMANTIC_INTRA_OP=4 SEMANTIC_INTER_OP=1 \
 - 启动即 `models.warmup()`（首条固定短文本校验 384 维）；失败仅记日志不退出，`/readyz` 会返回 error。
 - healthz==liveness；readyz 才反映模型就绪（warmup+维度/范数）。
 - ORT 线程 env：`SEMANTIC_INTRA_OP`(默认 4) / `SEMANTIC_INTER_OP`(默认 1)，CPUExecutionProvider；`SEMANTIC_SOFT_FALLBACK`(默认关) 控制 decision soft 兜底。sw 内每容器一个副本，`intra_op` ≥ 扩容无争抢（详见 Dockerfile/compose 启动命令）。
-- 容器：`Dockerfile` 基镜像 **`python:3.10-slim`**（非 alpine），把 `semantic.py/parse.py/embedding.py/models.py/decision.py/ontology` 与模型工件 `models/e5s-v1`（INT8 onnx + tokenizer + MANIFEST）整体 ADD 进 `/app`，随镜像打包；requirements 含 `onnxruntime==1.19.2`、`tokenizers==0.15.2`、`numpy==1.24.4`。镜像尺寸相比初版显著缩小（slim + INT8），host 无需预装 transformers/torch。
+- 容器：`Dockerfile` 基镜像 **`python:3.10-slim`**（非 alpine），ADD `semantic.py/parse.py/embedding.py/models.py/decision.py/ontology`；模型在**构建期**经 `ARG MODEL_URL`（默认 GitHub Release `models-e5s-v1`）下载并 sha256 校验后进 `/app/models/e5s-v1`——**免本地模型目录、镜像自含模型**。requirements 含 `onnxruntime==1.19.2`、`tokenizers==0.15.2`、`numpy==1.24.4`（无 torch/transformers）。镜像尺寸 slim + INT8。
 
 ## 镜像构建 / 服务编排（本机 registry 默认）
 ```bash
+# 构建（默认自动从 GitHub Release 下载模型，构建机需联网；可用 --build-arg MODEL_URL=… 覆盖）
 docker build -t 192.168.233.128:5000/2404/semantic:1.1.0 .
 docker service create --name 2404-semantic -p 3003:3003 --replicas 2 --with-registry-auth \
   192.168.233.128:5000/2404/semantic:1.1.0
 ```
+
+## Docker 配置各种环境 / 与本地 host 方式对比
+- **本地开发/直跑**（本仓库 `./start.sh`）：各服务以进程跑在 host。需一次性准备 host 环境：
+  Python 依赖（`pip install -r semantic/requirements.txt tokenizer/requirements.txt` 等）+ 语义模型（`bash semantic/tools/fetch_model.sh`）。kvstore(C)/前端缺失由 start.sh 自动 make / pnpm。
+- **Docker/生产**（`ai-chat-stack/` compose，镜像仓库发布）：每个服务打成**自含镜像**（semantic 镜像内含 python3.10-slim + onnxruntime/tokenizers + e5 模型），任何节点无需预装 Python 依赖与模型——这正是"用 Docker 固化各环境"的做法；构建时联网拉模型即可。compose 里 semantic 以镜像运行（端口 3003、healthcheck /readyz）。

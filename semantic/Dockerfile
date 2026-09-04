@@ -9,8 +9,21 @@ ADD ./embedding.py /app
 ADD ./models.py /app
 ADD ./decision.py /app
 ADD ./ontology /app/ontology
-# 模型工件（e5s-v1: model.onnx(INT8) + tokenizer.json + MANIFEST.json + onnx-fp32(对照)）
-ADD ./models/e5s-v1 /app/models/e5s-v1
+# 模型工件（gitignored，不在仓库）：构建期从 GitHub Release 下载 + sha256 校验（MODEL_URL 可覆盖）
+ARG MODEL_URL=https://github.com/robotlover-1/ECHO-CHAT/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz
+RUN mkdir -p /app/models/e5s-v1 && \
+    curl -fsSL --retry 3 --connect-timeout 15 -o /tmp/e5s.tar.gz "$MODEL_URL" && \
+    tar -xzf /tmp/e5s.tar.gz -C /app/models/e5s-v1 --strip-components=1 && \
+    rm -f /tmp/e5s.tar.gz && \
+    python3 - <<'PY'
+import hashlib, json, os
+d = "/app/models/e5s-v1"
+m = json.load(open(os.path.join(d, "MANIFEST.json")))
+for f, k in [("model.onnx", "model_sha256"), ("tokenizer.json", "tokenizer_sha256")]:
+    h = hashlib.sha256(open(os.path.join(d, f), "rb").read()).hexdigest()
+    assert h == m[k], f"sha mismatch {f}"
+print("model sha verified")
+PY
 
 # requirements
 ADD ./requirements.txt /app

@@ -83,8 +83,17 @@ if [ ${#build_failed[@]} -ne 0 ]; then
 fi
 
 if [ ! -f "$BASE/semantic/models/e5s-v1/model.onnx" ]; then
-  echo "⚠ 未找到 semantic 模型文件（semantic/models/e5s-v1/model.onnx）：语义缓存将不可用（/embed 会 500 → 优雅 miss）。"
-  echo "  获取：见 semantic/README —— 一次性 venv 跑 semantic/tools/export_e5_onnx.py，或从开发机拷贝 semantic/models/e5s-v1/（该目录 gitignored，不在仓库内）。"
+  if [ "${ECHO_FETCH_MODEL:-}" = "1" ]; then
+    echo "  [model] 未找到模型，自动从 GitHub Release 下载（ECHO_FETCH_MODEL=1）..."
+    if ! bash "$BASE/semantic/tools/fetch_model.sh"; then
+      echo "  [model] ✘ 模型下载/校验失败，见 semantic/tools/fetch_model.sh"
+    fi
+  fi
+  if [ ! -f "$BASE/semantic/models/e5s-v1/model.onnx" ]; then
+    echo "⚠ 未找到 semantic 模型文件（semantic/models/e5s-v1/model.onnx）：语义缓存将不可用（/embed 会 500 → 优雅 miss，聊天不受影响）。"
+    echo "  获取：bash semantic/tools/fetch_model.sh   # 从 GitHub Release 下载+sha256 校验（约 79MB）"
+    echo "       或手动拷贝开发机 semantic/models/e5s-v1/。Release: https://github.com/robotlover-1/ECHO-CHAT/releases/tag/models-e5s-v1"
+  fi
 fi
 
 if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
