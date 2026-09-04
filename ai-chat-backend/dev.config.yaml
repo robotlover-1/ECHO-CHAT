@@ -33,7 +33,9 @@ chat:
 dependOn:
   ai-chat-service:
     address: "localhost:50055"
+    zrpcAddress: "localhost:50065"
     accessToken: "me256487ang1chubdpdialoud22sev1ozhoguumyqca"
+    transport: "grpc" # grpc (观察期默认) | zrpc
 redis:
   host: "127.0.0.1"
   port: 5160

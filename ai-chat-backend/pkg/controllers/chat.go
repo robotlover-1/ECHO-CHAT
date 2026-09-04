@@ -3,9 +3,7 @@ package controllers
 import (
 	"ai-chat-backend/pkg/config"
 	"ai-chat-backend/pkg/log"
-	"ai-chat-backend/services"
 	ai_chat_service "ai-chat-backend/services/ai-chat-service"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,10 +97,6 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		ParentMessageId: messageID,
 	}
 
-	aiChatServicePool := ai_chat_service.GetAiChatServiceClientPool()
-	conn := aiChatServicePool.Get()
-	defer aiChatServicePool.Put(conn)
-	ctx1 := services.AppendBearerTokenToContext(context.Background(), chat.config.DependOn.AiChatService.AccessToken)
 	in := &ai_chat_service_proto.ChatCompletionRequest{
 		Id:            messageID,
 		Message:       payload.Prompt,
@@ -125,8 +119,18 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		in.EnableContext = true
 	}
 
-	aiChatServiceClient := ai_chat_service_proto.NewChatClient(conn)
-	stream, err := aiChatServiceClient.ChatCompletionStream(ctx1, in)
+	dep := chat.config.DependOn.AiChatService
+	addr := dep.Address
+	transport := dep.Transport
+	if dep.Transport == "zrpc" {
+		if dep.ZrpcAddress != "" {
+			addr = dep.ZrpcAddress
+		}
+	} else {
+		transport = "grpc"
+	}
+	// 浏览器断开取消：父 ctx 取 Gin 请求 ctx（不再用 context.Background）
+	stream, err := ai_chat_service.OpenChatStream(ctx.Request.Context(), transport, addr, dep.AccessToken, in)
 	if err != nil {
 		chat.log.Error(err)
 		ctx.JSON(200, gin.H{
@@ -136,7 +140,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		})
 		return
 	}
-	defer stream.CloseSend()
+	defer stream.Close()
 
 	firstChunk := true
 	chunkCount := 0 // 流式过程中定期刷新 tokens 统计

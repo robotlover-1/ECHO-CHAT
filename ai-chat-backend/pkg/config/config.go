@@ -28,8 +28,10 @@ type Config struct {
 	}
 	DependOn struct {
 		AiChatService struct {
-			Address     string
+			Address     string // gRPC address (50055)
+			ZrpcAddress string // zrpc v2 address (50065)
 			AccessToken string
+			Transport   string // "grpc" (default) | "zrpc"
 		} `mapstructure:"ai-chat-service"`
 	}
 	Redis struct {
