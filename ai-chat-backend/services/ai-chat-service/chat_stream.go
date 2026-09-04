@@ -5,86 +5,33 @@ import (
 	"errors"
 	"io"
 
-	"ai-chat-backend/services"
 	ai_chat_service_proto "ai-chat-backend/services/ai-chat-service/proto"
-	grpc_client "ai-chat-backend/services/grpc-client"
-
-	"google.golang.org/grpc"
 
 	zrpc "echo-zrpc-go"
 	"echo-zrpc-go/contract"
 )
 
 /*
- * Transport-agnostic ChatCompletionStream client for the backend. The gRPC and
- * zrpc v2 paths both present the SAME Recv() that yields the backend proto chunk,
- * so the controller's streaming/statistics/billing loop is transport-free.
- * zrpc runs on ctx.Request.Context() so a browser disconnect cancels the stream
- * and, in turn, the upstream LLM HTTP request in chat-service.
+ * ChatCompletionStream client for the backend —— gRPC 已删，仅走 zrpc v2。
+ * Recv() 产出后端 proto chunk，controller 的计费/统计/流式逻辑零改动。
+ * 父 ctx 取 Gin 请求 ctx：浏览器断开 → 取消 zrpc 流 → chat-service 取消上游 LLM。
  */
 
-// ChatStream is the minimal surface the controller consumes.
+// ChatStream 是 controller 消费的最小面。
 type ChatStream interface {
 	Recv() (*ai_chat_service_proto.ChatCompletionStreamResponse, error)
 	Close() error
 }
 
-// OpenChatStream opens a ChatCompletionStream over grpc or zrpc (config switch).
-func OpenChatStream(ctx context.Context, transport, address, token string,
+// OpenChatStream 打开一条 ChatCompletionStream（zrpc）。
+func OpenChatStream(ctx context.Context, address, token string,
 	in *ai_chat_service_proto.ChatCompletionRequest) (ChatStream, error) {
 
-	if transport == "zrpc" {
-		return openZRPCStream(ctx, address, token, in)
-	}
-	return openGRPCStream(ctx, address, token, in)
-}
-
-/* ---- gRPC path (unchanged behaviour; kept as the default during observation) */
-
-func openGRPCStream(ctx context.Context, address, token string,
-	in *ai_chat_service_proto.ChatCompletionRequest) (ChatStream, error) {
-	// shared pool is keyed on config.DependOn.AiChatService.Address (parity with
-	// the previous code path); address is kept for signature symmetry.
-	_ = address
-	shared := GetAiChatServiceClientPool()
-	c := shared.Get()
-	cc := ai_chat_service_proto.NewChatClient(c)
-	authCtx := services.AppendBearerTokenToContext(ctx, token)
-	gs, err := cc.ChatCompletionStream(authCtx, in)
-	if err != nil {
-		shared.Put(c)
-		return nil, err
-	}
-	return &grpcChatStream{shared: shared, conn: c, stream: gs}, nil
-}
-
-type grpcChatStream struct {
-	shared grpc_client.ClientPool
-	conn   *grpc.ClientConn
-	stream ai_chat_service_proto.Chat_ChatCompletionStreamClient
-}
-
-func (g *grpcChatStream) Recv() (*ai_chat_service_proto.ChatCompletionStreamResponse, error) {
-	return g.stream.Recv()
-}
-func (g *grpcChatStream) Close() error {
-	_ = g.stream.CloseSend()
-	if g.shared != nil {
-		g.shared.Put(g.conn)
-	}
-	return nil
-}
-
-/* ---- zrpc v2 path ---- */
-
-func openZRPCStream(ctx context.Context, address, token string,
-	in *ai_chat_service_proto.ChatCompletionRequest) (ChatStream, error) {
 	cli, err := zrpc.NewClient(clientOptionsFromAddress(address, token))
 	if err != nil {
 		return nil, err
 	}
-	st, err := cli.Stream(ctx, contract.MethodChatCompletionStream,
-		contractReqFromProto(in))
+	st, err := cli.Stream(ctx, contract.MethodChatCompletionStream, contractReqFromProto(in))
 	if err != nil {
 		cli.Close()
 		return nil, err
@@ -112,12 +59,11 @@ func (z *zrpcChatStream) Recv() (*ai_chat_service_proto.ChatCompletionStreamResp
 	}
 	return protoFromContractStream(&c), nil
 }
+
 func (z *zrpcChatStream) Close() error {
 	_ = z.st.Close()
 	return z.cli.Close()
 }
-
-/* ---- proto <-> shared-contract mappers ---- */
 
 func contractReqFromProto(in *ai_chat_service_proto.ChatCompletionRequest) *contract.ChatCompletionRequest {
 	out := &contract.ChatCompletionRequest{
@@ -149,7 +95,6 @@ func protoFromContractStream(c *contract.ChatCompletionStreamResponse) *ai_chat_
 	return out
 }
 
-// hostOf/portOf reuse the small address parser from the grpc pool helpers.
 func hostOf(addr string) string { h, _, _ := splitAddr(addr); return h }
 func portOf(addr string) int {
 	_, p, ok := splitAddr(addr)

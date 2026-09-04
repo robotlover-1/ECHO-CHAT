@@ -18,15 +18,6 @@ type ChatStream interface {
 	Send(*proto.ChatCompletionStreamResponse) error
 }
 
-// grpcChatStream adapts a gRPC server stream to ChatStream (gRPC path).
-type grpcChatStream struct {
-	proto.Chat_ChatCompletionStreamServer
-}
-
-func (g *grpcChatStream) Context() context.Context {
-	return g.Chat_ChatCompletionStreamServer.Context()
-}
-
 // zrpcChatStream adapts ChatStream onto a zrpc.StreamWriter, converting each
 // proto chunk to the shared contract (which the zrpc writer JSON-encodes).
 type zrpcChatStream struct {

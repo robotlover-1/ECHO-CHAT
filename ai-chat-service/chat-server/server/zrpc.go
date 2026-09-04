@@ -17,9 +17,9 @@ import (
  * shared unchanged. Auth is enforced by the zrpc server envelope (Bearer).
  */
 
-// ChatSvc is the transport-agnostic surface served over zrpc.
+// ChatSvc 是 chat 业务的 zrpc 单传输出口（gRPC 已删；proto 结构体仅作内部 DTO）。
 type ChatSvc interface {
-	proto.ChatServer
+	ChatCompletion(ctx context.Context, in *proto.ChatCompletionRequest) (*proto.ChatCompletionResponse, error)
 	ServeChatStreamZRPC(ctx context.Context, raw json.RawMessage, w *zrpc.StreamWriter) error
 }
 

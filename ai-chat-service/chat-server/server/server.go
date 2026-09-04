@@ -23,7 +23,6 @@ import (
 )
 
 type chatService struct {
-	proto.UnimplementedChatServer
 	config     *config.Config
 	log        log.ILogger
 	data       data.IChatRecordsData
@@ -133,12 +132,6 @@ func (s *chatService) ChatCompletion(ctx context.Context, in *proto.ChatCompleti
 		}
 	}()
 	return res, err
-}
-
-// ChatCompletionStream is the gRPC entry; it reuses the transport-agnostic
-// business path via the gRPC ChatStream adapter.
-func (s *chatService) ChatCompletionStream(in *proto.ChatCompletionRequest, stream proto.Chat_ChatCompletionStreamServer) error {
-	return s.chatCompletionStream(in, &grpcChatStream{Chat_ChatCompletionStreamServer: stream})
 }
 
 func (s *chatService) chatCompletionStream(in *proto.ChatCompletionRequest, stream ChatStream) error {
