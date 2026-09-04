@@ -44,6 +44,13 @@ def get_embedding(req, args: dict):
             "fingerprint_eligible": q.fingerprint_eligible,
             "parser_version": q.parser_version,
             "ontology_version": q.ontology_version,
+            "lang_terms_version": q.lang_terms_version,
+            # Task3 实体化可选字段（无则 null/false）；旧字段名(subject/intent/…)不变
+            "subject_kind": q.subject_kind,
+            "implementation_family": q.implementation_family,
+            "namespace": q.namespace,
+            "type_args": list(q.type_args or []),
+            "multi_subject": q.multi_subject,
         }
     except Exception as e:
         logger.error(traceback.format_exc())

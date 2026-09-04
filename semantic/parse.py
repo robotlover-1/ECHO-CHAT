@@ -30,9 +30,16 @@ for _phrase in ("线程安全", "持久化", "持久型", "重复键", "父指�
     if _phrase and _phrase not in jieba.dt.FREQ:
         jieba.add_word(_phrase, freq=50000)
 
-from ontology import lookup_subject_id, ONTOLOGY_VERSION
+from ontology import (
+    lookup_subject_id, ONTOLOGY_VERSION,
+    lookup_lang_entity, LANG_TERMS_VERSION, TermMatch,
+)
 
-PARSER_VERSION = "v1"
+# Task3：术语实体化 + 指纹安全 + 语言门控。PARSER_VERSION v1→v3：
+# fingerprint payload 含 parser/ontology/lang_terms 版本 → 同文本新值不同、旧值成孤儿，无跨版混用。
+PARSER_VERSION = "v3"
+# lang_terms 实体 kind 属库/内建/类 → 非 alias_of 概念，指纹不可直命（仅向量+decision）。
+_LANG_ENTITY_KINDS = {"library_type", "builtin_type", "class"}
 
 # fmt: off
 # ============ 主题句式（另有新增中英句式见 _SUBJECT_EN，均在 _extract_subject_pair 汇总） ============
@@ -115,6 +122,39 @@ def _extract_subject_pair(text):
     if subject_id is None:
         subject_id = lookup_subject_id(n)
     return subject_text, subject_id
+
+
+# ---- Task3：语言实体化回退 ----
+# 句式抽出的 subject 未被全局本体(alias_of)认出、但语言已知时，尝试语言受限实体表
+# (lang_terms cpp/python/java…)。返回 (kind/family/namespace/type_args/surface) 汇总的 dict 或 None；
+# ≥2 个不同实体 → 返回 sentinel dict(multi_subject=True)。供 parse() 决策 subject_id/source。
+_MULTI_SENTINEL = {
+    "multi_subject": True, "entity_id": None, "kind": None, "family": None,
+    "namespace": None, "type_args": (), "surface": None,
+}
+
+
+def _resolve_lang_entity(subject_text, full_normalized, lang):
+    """subject_text 部分未被概念解出 → 尝试 lang 受限实体的**单实体**、**多实体**或空。
+    参数 span_text：句式命中子句优先，否则保守整句扫描（澄清：句式空→全句）。
+    返回 dicts：单/multi 或 None（0 实体）。"""
+    span = subject_text if subject_text and subject_text.strip() else full_normalized.strip()
+    matches = lookup_lang_entity(lang, span)
+    if not matches:
+        # 子句是语言无关但整句含的容器词非类别词(如"写一个 list")→ 子句已覆盖；此处不兜底整句再查，
+        # 保持 0→None 语义(避免英文无关 "in" 误撞)。空 span 不会发生(上面已回退 full)。
+        return None
+    uniq = {}
+    for m in matches:
+        uniq.setdefault(m.entity_id, m)
+    if len(uniq) > 1:
+        return dict(_MULTI_SENTINEL)
+    ent = next(iter(uniq.values()))
+    return {
+        "multi_subject": False, "entity_id": ent.entity_id, "kind": ent.kind,
+        "family": ent.family, "namespace": ent.namespace,
+        "type_args": tuple(ent.type_args), "surface": ent.surface,
+    }
 
 
 # ============ 意图分类（definition 组排在 implementation 之前，兼顾英文定义不误撞实现） ============
@@ -218,7 +258,6 @@ LANG_PATTERNS = [
     ("python",   re.compile(_LK(r"python") + r"|" + _LK(r"\bpy\b"))),
     ("rust",     re.compile(_LK(r"rust"))),
     ("golang",   re.compile(_LK(r"golang"))),
-    ("go",       re.compile(_LK(r"go"))),
 ]
 # `c` 单独特殊：仅命中"c语言"或紧跟实现语境才判（去空白后匹配，"使用 C 编写 rbtree"）。
 _C_IMPL_CTX = re.compile(r"(?<![a-z0-9+#])c(?![a-z0-9+#])(?=.*(实现|编写|生成|写|编程|代码|implementation))")
@@ -227,9 +266,85 @@ _C_IMPL_CTX = re.compile(r"(?<![a-z0-9+#])c(?![a-z0-9+#])(?=.*(实现|编写|生
 # 压缩后 in+lang 粘连丢失词界，故在保留空格的小写文本上用词界匹配（小写 text 预处理）。
 _EN_IN_LANG = re.compile(r"\bin\s+(python|py|java|javascript|typescript|go|golang|rust|c\+\+|cpp|ruby|php|swift|kotlin|c#|csharp)\b", re.IGNORECASE)
 
+# ---- Task3 语言门控 ----
+# 强证据（长 token/带符号）：出现即判，无需编程锚点。order 内后者若为前者的前缀/变形不重复计。
+# ja/ts/js/py 等短别名为次证据同列。剔除弱词 go/swift/ruby/c（单独处理）。
+_STRONG_HINT_ORDER = [
+    ("objective-c", r"objective-?c"),
+    ("cpp",         r"c\+\+"),            # c++ 长于 c，先扫；随后 cpp/cxx/CPP
+    ("cpp",         r"\bcxx\b"),
+    ("cpp",         r"\bcpp\b"),
+    ("cpp",         r"\bCPP\b"),
+    ("csharp",      r"c#"),
+    ("csharp",      r"\bcsharp\b"),
+    ("dotnet",      r"\.net(?![A-Za-z0-9])"),
+    ("golang",      r"\bgolang\b"),
+    ("typescript",  r"\btypescript\b"),
+    ("javascript",  r"\bjavascript\b"),
+    ("java",        r"\bjava(?!script)\b"),
+    ("python",      r"\bpython\b"),
+    ("python",      r"\bpy\b"),
+    ("rust",        r"\brust\b"),
+    ("php",         r"\bphp\b"),
+    ("kotlin",      r"\bkotlin\b"),
+    ("node",        r"\bnode\.?js\b|\bnodejs\b"),
+]
+# 弱词：单现须有编程锚点/技术词共现或带"语言"限定；判中后 go/swift/ruby 归一为 golang/swift/ruby，
+# c 仅 c语言/实现语境（沿用上部 _C_IMPL_CTX+“c语言”特判）。
+_WEAK_RULE = [
+    # (canon_id, 词界 pattern, 触发释义/别名)
+    ("golang",  r"go"),
+    ("swift",   r"swift"),
+    ("ruby",    r"ruby"),
+]
+_WEAK_ANCHOR = re.compile(
+    r"(语言|编程|代码|开发|实现|编写|类型|类|接口|函数|方法|数组|列表|实现|库|算法|struct|class|func|var|func|array|list|map|哈希)"
+    r"|using\s+\w+|in\b|language|with\s+\w+|package|import|module|函数|学习|入门", re.I)
+
+
+def _langs_present(low):
+    """在保空格小写文本上扫强/中证据，返回命中语言规范 id 集（go 等弱词另行门控追加）。"""
+    low2 = re.sub(r"([\s,，;；.。]+)", " ", low)  # 词隙统一便于词界
+    hits = set()
+    for canon, pat in LANG_PATTERNS:            # 复用现成强模式（cpp/c#/java/…，无 go）
+        if pat.search(low2):
+            hits.add(canon)
+    # golang 已在 LANG_PATTERNS，js/ts/py 等短别名用 STRONG fallback（LANG_PATTERNS 未含，实走 in 尾式）
+    for canon, pat in _STRONG_HINT_ORDER:
+        if re.search(pat, low2):
+            hits.add(canon)
+    return hits
+
+
+def detect_language(text):
+    """语言门控：返回规范语言 id or None。
+    强证据（长 token/符号：python/c++/rust/golang/…）直接判；中证据（js/ts/py/java）限定拼写；
+    弱词 go/swift/ruby 单现须命中编程锚点（_WEAK_ANCHOR：语言/实现/代码/类型词族共性技术词）才判，
+    否则保守放弃（如 "go to the next step"→ 与英文介词高频词 "go" 混淆 → None）。
+    c 仅"c语言"或实现语境（_C_IMPL_CTX），由 extract_language 特判合并。
+    多条不同语言并存仍按既有一致性 → None（防 C++/Go 同句双解被误标单语言）。
+    """
+    low = " ".join(text.lower().split())
+    hits = _langs_present(low)
+    if len(hits) > 1:
+        return None
+    if hits:
+        return next(iter(hits))
+    # 无强证据 → 弱词门控（go/swift/ruby 须编程锚点）
+    low_wordy = re.sub(r"\s+", " ", low).strip()
+    for canon, pat in _WEAK_RULE:
+        if re.search(_LK(pat), low_wordy) and _WEAK_ANCHOR.search(low_wordy):
+            return canon
+    # 白名单命名空间 std::<ident> 是原生 concrete 容器引用(如 std::list<int>)→ 无口语语言词也定为 cpp。
+    # 不进文词频大,避免英语副词 "std" 误撞：仅"std::"后紧跟拉丁标识符的**代码形态**。
+    if re.search(r"\bstd::[A-Za-z_]\w*", low_wordy) and not re.search(
+            r"[一-鿿]{2,}(标准|单位)", low_wordy):
+        return "cpp"
+    return None
+
 
 def normalize_lang_tag(word):
-    """英文尾式 ' in <lang>' 的语言词 → LANG_PATTERNS 规范 id。"""
+    """英文尾式 ' in <lang>' 的语言词 → 规范 id。"""
     w = word.lower()
     for canon, tags in (
         ("cpp", {"c++", "cpp"}),
@@ -242,29 +357,28 @@ def normalize_lang_tag(word):
     ):
         if w in tags:
             return canon
-    # go/golang 已在上方 go 命中；其余原生直接用小写作为 id
     return w
 
 
 def extract_language(text):
-    """抽取实现目标语言：cpp/csharp/dotnet/javascript/node/typescript/java/python/rust/golang/go/c；
-    长模式优先；命中多个不同语言返回 None。
-    用**保空格**小写文本跑词界正则：若先去空格，"实现 cpp rbtree" 会粘连成 cpprbtree，
-    ASCII 词界把 cpp 后紧跟的字母挡掉 → 语言漏判。压缩文本仅供 c语言/实现语境特判。"""
+    """抽取实现目标语言：cpp/csharp/dotnet/javascript/node/typescript/java/python/rust/golang/go/c。
+    复用门控 detect_language（强/中证据），再特判 c（c语言/实现语境）与英文尾式 in <lang>；
+    命中多个不同语言返回 None。保留既有识别语义，调用方可安全替换原强模式扫描。"""
     low = " ".join(text.lower().split())
     n = re.sub(r"\s+", "", low)
-    hits = set()
-    for lang, pat in LANG_PATTERNS:
-        if pat.search(low):
-            hits.add(lang)
+    hits = detect_language(text)
+    langs = set()
+    if hits:
+        langs.add(hits)
+    # c 特判：仅"c语言"或紧跟实现语境（去空白后匹配）
     if "c语言" in n or _C_IMPL_CTX.search(n):
-        hits.add("c")
-    # carry-over：英文尾式 "… in python/java/go…"（压缩后 inpython 粘连，词界须在带空格文本上判）
+        langs.add("c")
+    # 英文尾式 "… in python/…"（压缩后 inpython 粘连 → 带空格文本补救）
     in_lang = _EN_IN_LANG.search(low)
     if in_lang:
-        hits.add(normalize_lang_tag(in_lang.group(1)))
-    if len(hits) == 1:
-        return next(iter(hits))
+        langs.add(normalize_lang_tag(in_lang.group(1)))
+    if len(langs) == 1:
+        return next(iter(langs))
     return None
 
 
@@ -421,7 +535,10 @@ def _is_alias_piece(word, subject_id):
 
 
 def _consumed_cover(_qp):
-    """把所有“已消费词”(主题别名/停用/白名单/语言/操作词)的字面拼起来，用于识别 jieba 跨界碎片。"""
+    """把所有“已消费词”(主题别名/停用/白名单/语言/操作词/命中 surface)的字面拼起来，
+    用于识别 jieba 跨界碎片。命中 surface 及其实体概念别名族一并入镜(消 std::list/cpp_std_list 等)：
+    语素若落于此总字面 → 非真实内容约束。type_args(int/string…) **不**入镜 → 保留为约束。
+    """
     parts = []
     if _qp.subject_id:
         from ontology import load
@@ -429,6 +546,11 @@ def _consumed_cover(_qp):
             if c["id"] == _qp.subject_id:
                 parts += c["aliases"]
                 break
+    # 仅库/内建/类实体(非 alias_of)才额外把命中 surface 入镜：它们的别名族不在概念正排表里，
+    # 须靠 surface(如 std::list/cpp_std_list)消其残余 token。概念型主体已由其 alias 覆盖，勿再吞宽。
+    if (getattr(_qp, "subject_kind", None) in _LANG_ENTITY_KINDS
+            and getattr(_qp, "matched_surface", None)):
+        parts.append(getattr(_qp, "matched_surface", None))
     parts += list(STOP_WORDS) + list(_RESIDUAL_WHITELIST) + list(LANG_TERMS) + list(OP_TERMS_EN) + list(OP_TERMS_ZH)
     return "".join(parts).lower()
 
@@ -458,9 +580,28 @@ def _residual_words(_qp):
     return frozenset(keep)
 
 
+def _alias_of_only(qp):
+    """是否 alias_of 概念（非库/内建/类实体）:概念路径的 subject 未标 kind。"""
+    return getattr(qp, "subject_kind", None) is None
+
+
+# Task3 指纹安全：语义指纹只对「alias_of 同实体 + 无 type_args + 白名单/无 namespace + 单主题且干净」
+# 的查询可直命。库/内建实体(entity_kind∈{library_type,builtin_type,class})、type_args 非空、自定义
+# namespace、multi_subject、无法解析实体 → 一律 eligible=False（只向量召回 + decision 判）。
 def _fingerprint_eligible(qp) -> bool:
-    return (bool(qp.subject_id)
-            and qp.intent not in ("unknown",)
+    if not getattr(qp, "subject_id", None):
+        return False
+    if getattr(qp, "multi_subject", False):
+        return False
+    # 库/内建/类实体：implementation_family 仅召回，不直接共享指纹
+    if not _alias_of_only(qp):
+        return False
+    if getattr(qp, "type_args", ()):        # type_args 非空 → 模板参数是硬约束，不可直命
+        return False
+    ns = getattr(qp, "namespace", None)
+    if ns is not None and ns != "std":
+        return False
+    return (qp.intent not in ("unknown",)
             and not qp.bypass_cache
             and not qp.context_dependent
             and not qp.stateful
@@ -554,11 +695,22 @@ class ParsedQuery:
     bypass_cache: bool = False
     fingerprint: "Optional[str]" = None
     fingerprint_eligible: bool = False
-    parser_version: str = "v1"
+    parser_version: str = PARSER_VERSION
     ontology_version: str = ONTOLOGY_VERSION
+    lang_terms_version: "Optional[str]" = None
+    # ---- Task3 实体化元数据（无则 None/False；旧字段名与语义不变） ----
+    subject_kind: "Optional[str]" = None
+    implementation_family: "Optional[str]" = None
+    namespace: "Optional[str]" = None
+    type_args: "Optional[tuple]" = ()
+    matched_surface: "Optional[str]" = None
+    multi_subject: bool = False
+    reason: "Optional[str]" = None
     def __post_init__(self):
         # residual_words 恒为可散列集合（容错 mutable 默认入参的调用方）
         object.__setattr__(self, "residual_words", frozenset(self.residual_words))
+        # type_args 恒 tuple（语义=结构化模板实参，可哈希供决策读）
+        object.__setattr__(self, "type_args", tuple(self.type_args or ()))
 
 
 def output_type_for(intent):
@@ -582,17 +734,51 @@ def parse(text):
     raw = text if isinstance(text, str) else str(text)
     normalized_text = normalize(raw)
     raw_lower = raw.strip()
-    subject_text, subject_id = _extract_subject_pair(normalized_text)
     intent = extract_intent(normalized_text)
     language = extract_language(normalized_text)
-    operation = extract_operation(normalized_text, subject_id)
     context_dependent = is_context_dependent(raw_lower)
     stateful = is_stateful_instruction(raw_lower)
+
+    # ---- subject 解析：句式→span → 全局 alias_of 概念；空且语言已判 → 语言受限实体 ----
+    # subject_text=句式命中子句原文(无则 None)；概念(alias_of)优先，落到 concepts.json 顶层 id。
+    clause_text, concept_id = _extract_subject_pair(normalized_text)
+    subject_meta = {
+        "subject_text": clause_text, "subject_id": concept_id,
+        "subject_kind": None, "implementation_family": None,
+        "namespace": None, "type_args": (),
+        "matched_surface": clause_text, "multi_subject": False,
+        "reason": None, "source": "concept" if concept_id else "none",
+    }
+    if concept_id is None and language:
+        ent = _resolve_lang_entity(clause_text, normalized_text, language)
+        if ent is not None:
+            if ent.get("multi_subject"):
+                subject_meta = {
+                    "subject_text": clause_text, "subject_id": None,
+                    "subject_kind": None, "implementation_family": None,
+                    "namespace": None, "type_args": (), "matched_surface": None,
+                    "multi_subject": True, "reason": "multiple_subjects",
+                    "source": "lang_terms",
+                }
+            else:
+                subject_meta = {
+                    "subject_text": ent["surface"], "subject_id": ent["entity_id"],
+                    "subject_kind": ent["kind"], "implementation_family": ent["family"],
+                    "namespace": ent["namespace"], "type_args": ent["type_args"],
+                    "matched_surface": ent["surface"], "multi_subject": False,
+                    "reason": None, "source": "lang_terms",
+                }
+    elif subject_meta["subject_id"] is None:
+        # 概念/实体都未解出：无法映射主题(含 unknown 语言弱词)→ 非 eligible；供 decision 走 unknown。
+        subject_meta["reason"] = "subject_unresolved"
+
+    subject_id = subject_meta["subject_id"]
+    operation = extract_operation(normalized_text, subject_id)
 
     base = ParsedQuery(
         raw_text=raw,
         normalized_text=normalized_text,
-        subject_text=subject_text,
+        subject_text=subject_meta["subject_text"],
         subject_id=subject_id,
         intent=intent,
         language=language,
@@ -601,6 +787,14 @@ def parse(text):
         context_dependent=context_dependent,
         stateful=stateful,
         bypass_cache=context_dependent or stateful,
+        subject_kind=subject_meta["subject_kind"],
+        implementation_family=subject_meta["implementation_family"],
+        namespace=subject_meta["namespace"],
+        type_args=subject_meta["type_args"],
+        matched_surface=subject_meta["matched_surface"],
+        multi_subject=subject_meta["multi_subject"],
+        reason=subject_meta["reason"],
+        lang_terms_version=LANG_TERMS_VERSION,
     )
     residual = _residual_words(base)
     eligible = _fingerprint_eligible(base)  # 内部复算 residual，但二者一致（residual 只依赖槽位+原文）
