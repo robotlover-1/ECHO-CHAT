@@ -89,6 +89,21 @@ grep -o '"source":"[a-z]*"' /tmp/out.txt | sort -u     # 期望含 llm；命中�
 同一句分别用 grpc（transport=grpc）与 zrpc 各跑一次，比对逐行文本/`source`/末包 token 是否一致；
 浏览器刷新/断连测试：请求中途 Ctrl-C，观察 `runtime/logs/service.log` 是否出现流 handler 取消（zrpc 取消链）。
 
+## 3.5 语义缓存命中（source=cache）验证要点
+
+语义缓存（自建 semantic 向量库 + kvstore 索引）命中依赖 **query 能抽到 subject**。
+semcache 设计（`ai-chat-service/chat-server/semcache/semcache.go`）：`/embed` 返回的
+`subject`/`subject_id` 皆空 → **不查全局缓存**（通用 how-to 句直接 miss，属准入规则非 bug）。
+
+- ✅ 能命中的例句（代码/算法类，能抽到本体）：`红黑树和AVL树的区别是什么` —— 第二次同句
+  返回 `source=cache`、app.log 出现 `semcache_vector_hit subject=avl_tree top=1.000 candidates=12`。
+- ❌ 我最初误判用句 `缓存机制测试句子A` —— 通用句无 subject，永远 miss（与 zrpc/transport 无关）。
+
+定位小抄：chat-service 自己的 logrus 写到 `ai-chat-service/runtime/logs/app.log`（不是 nohup 的
+`runtime/logs/service.log`）。缓存决策行前缀 `semcache_`（query_encodes / vector_hit /
+fingerprint_hit / vector_hit_no_answer 等）都在这。验证前确保 semantic(3003) 先起、模型在
+（`semantic/models/e5s-v1/model.onnx`），并 `semantic_cache.enabled: true`。
+
 ## 4) 常见坑
 
 - backend 启动连 redis/mysql 失败 → 确认 kvstore(5160) 已起、3306 已跑。
