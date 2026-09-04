@@ -151,3 +151,6 @@ third_party/zrpc/build/
 third_party/zrpc/tests/bin/
 *.o
 *.a
+
+# 本机双栈测试临时配置（勿提交）
+dev.ztest.yaml
