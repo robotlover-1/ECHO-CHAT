@@ -33,7 +33,9 @@ bash semantic/tools/fetch_model.sh          # 从 GitHub Release 下载+sha256 �
 #   或 ECHO_FETCH_MODEL=1 ./start.sh 让 start.sh 缺模型时自动下载。
 
 DEEPSEEK_API_KEY=sk-xxx ./start.sh   # key 走环境变量，勿提交 git
-# 另一种环境方案：走 Docker（ai-chat-stack/），semantic 镜像构建期自含模型与 py 依赖，各节点免装。
+
+# 另一种环境方案（各节点免装依赖/模型）：全栈 Docker —— 见 docker/README.md
+#   cd docker && DEEPSEEK_API_KEY=sk-xxx docker compose up -d --build
 ```
 
 前置依赖：Go、make/gcc（kvstore）、pnpm/node（前端，仅首次）、Python 3.8+（host 需 `pip install -r semantic/requirements.txt tokenizer/requirements.txt`；nuxt/jieba 等按既有说明）。

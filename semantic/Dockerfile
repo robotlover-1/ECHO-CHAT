@@ -2,6 +2,9 @@ FROM python:3.10-slim
 WORKDIR /app
 ENV PORT 3003
 
+# 构建期拉模型需要 curl
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
 # 服务模块代码（semantic.py 顶层 import parse/decision/embedding/models/ontology）
 ADD ./semantic.py /app
 ADD ./parse.py /app
