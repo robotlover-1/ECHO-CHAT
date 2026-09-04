@@ -18,6 +18,34 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 
 echo "== 环境/补编译 =="
 
+# ---- zrpc v2：libzrpc.a 增量构建 ----
+# 依赖：third_party/zrpc/src|include 的 .c/.h，或 zrpc-go 的 .c/.h 更新时，重建静态库；
+# 之后三个 Go 服务必须重编（它们的 go.mod replace 到 ../zrpc-go，而 zrpc-go 链接 libzrpc.a）。
+ZRPC_LIB="$BASE/third_party/zrpc/build/libzrpc.a"
+ZRPC_SVC_BINS=("$BASE/bin/ai-chat-service" "$BASE/bin/keywords-filter" "$BASE/bin/ai-chat-backend")
+zrpc_need=0
+[ $REBUILD -eq 1 ] && zrpc_need=1
+if [ $zrpc_need -eq 0 ]; then
+  if [ ! -f "$ZRPC_LIB" ]; then
+    zrpc_need=1
+  else
+    if find "$BASE/third_party/zrpc/src" "$BASE/third_party/zrpc/include" "$BASE/third_party/zrpc/ntyco" "$BASE/zrpc-go" \
+        \( -name '*.c' -o -name '*.h' \) -newer "$ZRPC_LIB" -print -quit 2>/dev/null | grep -q .; then
+      zrpc_need=1
+    fi
+  fi
+fi
+if [ $zrpc_need -eq 1 ]; then
+  echo "  [build] libzrpc (make)"
+  if [ $REBUILD -eq 1 ]; then ( cd "$BASE/third_party/zrpc" && make clean >/dev/null 2>&1 || true ); fi
+  if ! ( cd "$BASE/third_party/zrpc" && make ); then
+    echo "  [build] libzrpc ✘ 编译失败"
+    build_failed+=("libzrpc")
+  fi
+  # C/zrpc-go 更新会改变静态库 → 强制三个服务重编（即使它们自己的 *.go 没变）
+  for tgt in "${ZRPC_SVC_BINS[@]}"; do rm -f "$tgt"; done
+fi
+
 # 目标二进制缺失 / 存在更新的 *.go / --rebuild 时重建。格式: 名|构建目录|包|输出(相对 BASE)
 GO_BUILDS=(
   "ai-chat-backend|$BASE/ai-chat-backend|./cmd/|bin/ai-chat-backend"
