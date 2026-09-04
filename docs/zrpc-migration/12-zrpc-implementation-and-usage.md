@@ -122,3 +122,168 @@ make -C third_party/zrpc ccli        # C unary 客户端 → tests/bin/ccli <hos
 - 流事件有界 channel 满时丢事件并记日志（背压细化是后续项）。
 - 无 TLS/服务发现/LB（与 gRPC 时代相同的内网边界）；跨不可信网络需自行加 TLS/mesh。
 - 协议无 schema 演进工具（JSON + 契约 golden 测试兜底）。
+
+---
+
+## 附录 A：流程图
+
+### A1 架构分层与一次调用（unary / stream 通用）
+
+```mermaid
+flowchart TD
+    subgraph Go["Go 业务（backend / chat-service）"]
+        BIZ["controller / handler<br/>只用 contract 结构体"]
+        ZG["zrpc-go：Client / Server / StreamWriter"]
+    end
+    subgraph Cgo["cgo 边界（C 不持 Go 指针，只传 uint64 handle）"]
+        BR["bridge.c：回调复制→//export 投递 / Go 调 C ABI"]
+    end
+    subgraph CLib["C libzrpc.a"]
+        FR["zrpc_frame / zrpc_io<br/>20B 帧 + CRC + read/write_full"]
+        EN["zrpc_json：信封 + payload raw 原样"]
+        S["server：NtyCo accept + 每连接读协程"]
+        CT["client：unary/stream(独占连接)/cancel"]
+    end
+    BIZ -->|"Unary/Stream(ctx, method, req)"| ZG
+    ZG -->|cgo| BR
+    BR -->|C ABI| CT
+    CT -->|TCP 帧| S
+    S -->|方法表→回调| BR
+    BR -->|goZRPC… //export| ZG
+    ZG -->|goroutine 跑 handler| BIZ
+```
+
+### A2 unary 时序（request→response）
+
+```mermaid
+sequenceDiagram
+    participant Gc as Go client
+    participant Cc as C client
+    participant Cs as C server (NtyCo)
+    participant B as bridge
+    participant Gw as Go worker/handler
+    Gc->>Cc: call_unary(contract JSON)
+    Cc->>Cs: TCP: REQUEST 帧(信封 method/auth/deadline+payload)
+    Cs->>Cs: conn_reader 协程 frame_read(yield) → 鉴权 → 方法表
+    Cs->>B: cb(handle,rid,fd,payload)
+    B->>Gw: //export 复制→投递 job(不阻塞 NtyCo)
+    Gw->>Gw: 跑 handler → json.Marshal
+    Gw->>Cs: send_response(线程安全写锁)
+    Cs-->>Cc: RESPONSE 帧 {"payload":…}
+    Cc->>Gc: unwrap → 反序列化到 out
+```
+
+### A3 流式 + 浏览器断开取消链
+
+```mermaid
+sequenceDiagram
+    participant Br as 浏览器
+    participant Be as backend(Gin)
+    participant Cs as chat-service(C NtyCo server)
+    participant Gw as Go StreamWriter/handler
+    participant LLM as 上游 LLM HTTP
+    Br->>Be: POST /chat-process(stream)
+    Be->>Cs: zrpc Stream(ctx.Request.Context())
+    Cs->>Gw: conn_reader → //export → runStream(handler)
+    Gw->>LLM: SSE 流式请求
+    LLM-->>Gw: 分片
+    Gw-->>Be: STREAM_DATA×N → STREAM_END
+    Be-->>Br: NDJSON 逐行
+    Br--x Be: 浏览器断开 → ctx 取消
+    Be-->>Cs: zrpc 流取消(断连)
+    Cs-->>Gw: conn-close → cancelFD → handler ctx.Done
+    Gw-->>LLM: 取消 HTTP(连接关闭)
+```
+
+## 附录 B：必读代码摘录（与源码一致的"骨架"，完整实现见对应文件）
+
+**B1 帧解析：先校验长度再分配（zrpc_frame.c `parse_header`）**
+```c
+uint32_t len = get_u32_be(h + 12);
+if (len > ZRPC_MAX_FRAME_SIZE) return ZRPC_STATUS_FRAME_TOO_LARGE; /* 任何 malloc 之前 */
+```
+
+**B2 JSON 信封：业务 JSON raw 原样注入，不重序列化（zrpc_json.c）**
+```c
+static int add_raw_member(cJSON *root, const char *key,
+                          const void *business, uint32_t business_len)
+{
+    if (business == NULL || business_len == 0)
+        return cJSON_AddRawToObject(root, key, "{}") != NULL ? 0 : -1;
+    char *raw = dup_bytes(business, business_len);      /* 原样文本 */
+    cJSON *item = cJSON_CreateRaw(raw);                 /* raw 节点，打印即原文 */
+    free(raw);
+    cJSON_AddItemToObject(root, key, item);
+    return 0;
+}
+```
+
+**B3 协程内读：交给 NtyCo yield，不在调度线程上 poll（zrpc_io.c `co_read_full`）**
+```c
+static int co_read_full(int fd, void *buf, size_t len)
+{
+    uint8_t *p = (uint8_t *)buf; size_t off = 0;
+    while (off < len) {
+        ssize_t n = recv(fd, p + off, len - off, 0); /* 在 NtyCo 协程内 recv 会 yield */
+        if (n > 0) { off += (size_t)n; continue; }
+        if (n == 0) return ZRPC_STATUS_UNAVAILABLE;
+        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) continue;
+        return map_recv_error(errno);
+    }
+    return ZRPC_STATUS_OK;
+}
+```
+
+**B4 C→Go 回调：只复制并投递，立即返回（bridge.c `zrpc_bridge_server_cb`）**
+```c
+int zrpc_bridge_server_cb(uint64_t handle, uint64_t rid, int fd,
+                          const void *req, uint32_t len, uint64_t deadline)
+{
+    void *copy = len ? malloc(len) : NULL;
+    if (copy) memcpy(copy, req, len);
+    goZRPCDispatchRequest(handle, rid, fd, copy, len, deadline); /* 同步返回 */
+    free(copy);
+    return 0;
+}
+```
+
+**B5 Go 侧分发：不阻塞 NtyCo，有界投递（server.go `goZRPCDispatchRequest`）**
+```go
+//export goZRPCDispatchRequest
+func goZRPCDispatchRequest(handle C.uint64_t, rid C.uint64_t, fd C.int,
+	data unsafe.Pointer, dataLen C.uint32_t, deadline C.uint64_t) {
+	payload := C.GoBytes(data, C.int(dataLen)) // 此刻拷贝，安全
+	entry := handleGet(uint64(handle))          // uint64 → Go handler
+	if entry == nil || entry.srv.closed {
+		return
+	}
+	select { // 满则丢弃并记日志，绝不阻塞 NtyCo 调度线程
+	case entry.srv.jobs <- requestJob{rid: uint64(rid), fd: int(fd), payload: payload,
+		deadline: uint64(deadline), entry: entry}:
+	default:
+		log.Printf("zrpc: dispatch queue full, dropping rid=%d", uint64(rid))
+	}
+}
+```
+
+**B6 客户端流主循环（stream.go `Stream.Recv`）**
+```go
+func (s *Stream) Recv(out any) error {
+	select {
+	case ev, ok := <-s.evCh:
+		if !ok {
+			return io.EOF
+		}
+		switch ev.kind {
+		case eventStreamData:
+			return json.Unmarshal(ev.data, out) // DATA → 反序列化
+		case eventStreamEnd:
+			return io.EOF
+		case eventError:
+			return &StatusError{Code: ev.code, Message: errorMsgFromBytes(ev.data)}
+		}
+	case <-s.ctx.Done(): // 本地取消优先
+		return s.ctx.Err()
+	}
+}
+```
