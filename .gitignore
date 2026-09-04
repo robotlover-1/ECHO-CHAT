@@ -145,3 +145,9 @@ semantic/models/e5s-v1/onnx-api/
 semantic/tools/.cal_cache.json
 semantic/tools/cal_thresholds.json
 ai-chat-backend/www/
+
+# zrpc C build artifacts
+third_party/zrpc/build/
+third_party/zrpc/tests/bin/
+*.o
+*.a
