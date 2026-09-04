@@ -94,9 +94,21 @@ function handleRegenerate() {
       <AvatarComponent :image="inversion" />
     </div>
     <div class="overflow-hidden text-sm " :class="[inversion ? 'items-end' : 'items-start']">
-      <p class="text-xs text-[#b4bbc4]" :class="[inversion ? 'text-right' : 'text-left']">
-        {{ dateTime }}
-      </p>
+      <div
+        class="flex items-center text-xs text-[#b4bbc4]"
+        :class="[inversion ? 'justify-end' : 'justify-start']"
+      >
+        <p :class="[inversion ? 'text-right' : 'text-left']">
+          {{ dateTime }}
+        </p>
+        <span
+          v-if="!inversion && source"
+          class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded leading-none whitespace-nowrap"
+          :class="source === 'cache' ? 'text-[#4ade80] border border-[#4ade80]/40' : 'text-[#22d3ee] border border-[#22d3ee]/40 neon-text'"
+        >
+          {{ source === 'cache' ? '缓存命中' : '公有大模型' }}
+        </span>
+      </div>
       <div
         class="flex items-end gap-1 mt-2"
         :class="[inversion ? 'flex-row-reverse' : 'flex-row']"
@@ -109,13 +121,6 @@ function handleRegenerate() {
           :loading="loading"
           :as-raw-text="asRawText"
         />
-        <span
-          v-if="!inversion && source"
-          class="ml-1 text-[10px] px-1.5 py-0.5 rounded self-center whitespace-nowrap"
-          :class="source === 'cache' ? 'text-[#4ade80] border border-[#4ade80]/40' : 'text-[#22d3ee] border border-[#22d3ee]/40 neon-text'"
-        >
-          {{ source === 'cache' ? '缓存命中' : '公有大模型' }}
-        </span>
         <div class="flex flex-col">
           <button
             v-if="!inversion"
