@@ -9,6 +9,8 @@ type Config struct {
 	Http struct {
 		IP   string
 		Port int
+		// 可信代理；空=回环默认，见 middlewares.NewEngine
+		TrustedProxies []string `mapstructure:"trusted_proxies"`
 	}
 	Log struct {
 		Level   string

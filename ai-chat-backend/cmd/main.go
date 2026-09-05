@@ -42,8 +42,11 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	server := &http.Server{
 		Addr: addr,
 	}
-	entry := gin.Default()
-	entry.Use(middlewares.Cors())
+	engine, err := middlewares.NewEngine(r.config.Http.TrustedProxies)
+	if err != nil {
+		r.log.Fatal(err)
+	}
+	entry := engine
 	chat := entry.Group("/api")
 	chat.Use(middlewares.RateLimitMiddleware(rate.Limit(10), 10))
 	chat.POST("/chat-process", middlewares.AuthMiddleware(), chatService.ChatProcess)
@@ -92,7 +95,8 @@ func main() {
 
 	config.InitConfig(*configFile)
 	cnf := config.GetConfig()
-	fmt.Printf("%+v\n", cnf)
+	log.InfoF("config: http=%s:%d model=%s auth=%v log.level=%s",
+		cnf.Http.IP, cnf.Http.Port, cnf.Chat.Model, cnf.Auth.Enabled, cnf.Log.Level)
 
 	//初始化日志
 	log.SetLevel(cnf.Log.Level)
