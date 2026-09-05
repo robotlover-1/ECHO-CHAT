@@ -63,6 +63,7 @@ func (r *ChatGPTWebServer) httpServer(ctx context.Context) {
 	chat.POST("/session", chatService.Session)
 	chat.POST("/v1/user/login", chatService.Login)
 	chat.GET("/health", func(c *gin.Context) {})
+	chat.GET("/readyz", controllers.ReadyzHandler())
 	fs := http.FileServer(http.Dir("www"))
 	entry.NoRoute(func(ctx *gin.Context) {
 		fs.ServeHTTP(ctx.Writer, ctx.Request)
