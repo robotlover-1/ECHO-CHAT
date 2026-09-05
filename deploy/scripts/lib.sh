@@ -38,7 +38,9 @@ render_restricted() {
   umask 077
   local tmp
   tmp="$(mktemp "${out}.XXXXXX")"
-  trap 'rm -f "${tmp}"' RETURN
+  # EXIT 而非 RETURN：guard/die 走 exit 不触发 RETURN，防泄漏含密钥 tmp。
+  # ${tmp:-} 空值展开避免函数返回后(set -u)EXIT 触发 unbound；空/已 mv 时是安全 no-op。
+  trap '[ -n "${tmp:-}" ] && rm -f "${tmp}"' EXIT
   # shellcheck disable=SC2086
   envsubst "${varlist}" < "${template}" > "${tmp}"
   guard_no_residue "${tmp}"
