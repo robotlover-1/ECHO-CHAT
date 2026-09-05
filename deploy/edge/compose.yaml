@@ -1,0 +1,25 @@
+# 公网入口节点：frps + nginx。运行目录=deploy/edge（compose 自动读同目录 .env）。
+name: echo-chat-edge
+
+services:
+  frps:
+    image: ${FRPS_IMAGE:-snowdreamtech/frps:0.62.1}
+    restart: unless-stopped
+    command: ["-c", "/app/config.yaml"]
+    volumes:
+      - ./tunnel/frps.yaml:/app/config.yaml:ro
+    ports:
+      - "${FRP_BIND_PORT:-39000}:${FRP_BIND_PORT:-39000}"
+      - "127.0.0.1:${FRP_VHOST_HTTP_PORT:-39001}:${FRP_VHOST_HTTP_PORT:-39001}"
+      - "127.0.0.1:7500:7500"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./nginx/echo-chat.conf:/etc/nginx/conf.d/echo-chat.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      - frps

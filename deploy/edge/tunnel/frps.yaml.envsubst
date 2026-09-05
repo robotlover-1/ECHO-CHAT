@@ -1,0 +1,24 @@
+bindAddr: 0.0.0.0
+bindPort: ${FRP_BIND_PORT}
+
+# HTTP 虚拟主机只供本机 Nginx 访问（compose 将端口 publish 到 127.0.0.1）。
+vhostHTTPPort: ${FRP_VHOST_HTTP_PORT}
+
+auth:
+  method: token
+  token: "${FRP_AUTH_TOKEN}"
+
+transport:
+  tcpMux: true
+  maxPoolCount: 5
+
+webServer:
+  addr: 127.0.0.1
+  port: 7500
+  user: "frpadmin"
+  password: "${FRP_DASHBOARD_PASSWORD}"
+
+log:
+  to: console
+  level: info
+  maxDays: 7
