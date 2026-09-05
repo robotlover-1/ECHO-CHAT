@@ -32,7 +32,7 @@ case "${MODE}" in
   e2e)
     info "L4 流式聊天..."
     [[ -n "${AUTH}" ]] || die "e2e 需 AUTH=<登录token>"
-    local out; out="$(mktemp)"
+    out="$(mktemp)"
     trap 'rm -f "${out}"' RETURN
     start=$(date +%s%N)
     # -N 关缓冲；记录首字节到文件；统计响应时间
@@ -50,6 +50,7 @@ case "${MODE}" in
     wait "$cpid" || true
     end=$(( ($(date +%s%N) - start) / 1000000 ))
     info "首字节 ${first_byte}ms / 总时长 ${end}ms / 字节 $(wc -c < "${out}")"
+    [[ -s "${out}" ]] || die "e2e 无任何响应体(连接/鉴权/上游失败)"
     chunks=$(grep -c '^\n' "${out}" || true)
     [[ "$chunks" -ge 2 ]] || die "chunk 数不足(=$chunks)，疑似代理缓冲聚合"
     [[ "${first_byte}" -lt 30000 ]] || die "首字节超过 30s，流式不通"
