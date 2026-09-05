@@ -1,3 +1,5 @@
+# 部署渲染模板（勿直接使用）：docker compose 前先跑 deploy/scripts/render-config.sh app。
+# 变量由 deploy/app/.env 提供（.env.example 含本地开发默认，生产必须覆盖）。
 http:
   ip: 0.0.0.0
   port: 7080
@@ -33,13 +35,13 @@ chat:
 dependOn:
   ai-chat-service:
     address: "service:50055"
-    accessToken: "me256487ang1chubdpdialoud22sev1ozhoguumyqca"
+    accessToken: "${CHAT_SERVICE_TOKEN}"
 redis:
-  host: "kvstore"
-  port: 5160
+  host: "${KVSTORE_HOST}"
+  port: "${KVSTORE_PORT}"
   pwd: ""
 mysql:
-  dsn: "root:123456@tcp(host.docker.internal:3306)/ai_chat?charset=utf8mb4"
+  dsn: "${MYSQL_DSN}"
   maxOpenConn: 10
   maxIdleConn: 10
 auth:

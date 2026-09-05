@@ -1,14 +1,14 @@
 server:
   ip: 0.0.0.0
   port: 50055
-  accessToken: "me256487ang1chubdpdialoud22sev1ozhoguumyqca"
+  accessToken: "${CHAT_SERVICE_TOKEN}"
 log:
   # panic,fatal,error,warn,warning,info,debug,trace
   level: "info"
   logPath: "runtime/logs/app.log"
 chat:
   # openai key
-  api_key: "i0jey84SdkFdw5u43780yjr3h7se8nth0yi295nr94ksDngKprEh"
+  api_key: "${PROXY_API_KEY}"
   # openai 接口地址
   base_url: "http://proxy:8084/v1"
   # 使用的训练模型（DeepSeek v4-flash，与用户 key 匹配）
@@ -37,21 +37,21 @@ chat:
   # 上下文消息条数
   context_len: 4
 redis:
-  host: "kvstore"
-  port: 5160
+  host: "${KVSTORE_HOST}"
+  port: "${KVSTORE_PORT}"
   pwd: ""
 mysql:
-  dsn: "root:123456@tcp(host.docker.internal:3306)/ai_chat?collation=utf8mb4_unicode_ci&charset=utf8mb4"
+  dsn: "${MYSQL_DSN}"
   maxLifeTime: 3600
   maxOpenConn: 10
   maxIdleConn: 10
 dependOn:
   sensitive:
     address: "sensitive:50053"
-    accessToken: "ang1chubdev1ozhome256487d22sapguuv1ozhom"
+    accessToken: "${FILTER_SERVICE_TOKEN}"
   keywords:
     address: "keyword:50054"
-    accessToken: "ang1chubdev1ozhome256487d22sapguuv1ozhom"
+    accessToken: "${FILTER_SERVICE_TOKEN}"
   tokenizer:
     address: "http://tokenizer:3002"
   semantic:
@@ -81,12 +81,12 @@ semantic_cache:
   async_backfill: true
 vectorDB:
   # 访问地址
-  url: "http://lb-4u4r1fk4-1ys6gv3rpmdan420.clb.ap-guangzhou.tencentclb.com:60000"
+  url: "${VECTOR_DB_URL}"
   # 用户名
-  username: "root"
+  username: "${VECTOR_DB_USER}"
   # 密码
-  pwd: "YaUfVueWZJ20e4ghyLlBT8Dou5OapwpFTUq50oft"
-  database: "ai-chat"
+  pwd: "${VECTOR_DB_PWD}"
+  database: "${VECTOR_DB_NAME}"
   # 请求超时时长s
   timeout: 5
   # 最大空闲连接数
