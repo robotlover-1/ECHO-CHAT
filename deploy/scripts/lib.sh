@@ -16,8 +16,20 @@ require_env() {
       && die "缺少 ${envfile}。先执行: cp ${example} ${envfile} 并填写。" \
       || die "缺少 ${envfile}。"
   }
+  # 安全加载：逐行解析 KEY=VALUE，去引号后 export；不做 eval/source，值含 &、#、空格也安全。
   # shellcheck disable=SC1090
-  set -a; source "${envfile}"; set +a
+  while IFS= read -r _line || [[ -n "${_line}" ]]; do
+    _line="${_line%$'\r'}"
+    [[ -z "${_line}" || "${_line}" == \#* || "${_line}" != *=* ]] && continue
+    if [[ "${_line}" == export\ * ]]; then _line="${_line#export }"; fi
+    _key="${_line%%=*}"; _val="${_line#*=}"
+    # 去掉配对引号（单/双）
+    if [[ "${_val}" == \"*\" && "${#_val}" -ge 2 ]]; then _val="${_val%\"}"; _val="${_val#\"}"; fi
+    if [[ "${_val}" == \'*\' && "${#_val}" -ge 2 ]]; then _val="${_val%\'}"; _val="${_val#\'}"; fi
+    # declare 不再二次展开，赋值字面量
+    # shellcheck disable=SC2163
+    declare -gx "${_key}=${_val}"
+  done < "${envfile}"
 }
 
 # 受限 envsubst：只替换显式白名单变量，防误吞 nginx $host/$remote_addr 等。
