@@ -7,6 +7,9 @@
 #  - kvstore 镜像为“实验性”(见 kvstore.Dockerfile)。若构建失败: 在宿主 ./start.sh 只跑 kvstore(:5160)，
 #    然后把下面 kvstore 服务注释掉，并把 docker/config/{service,backend}.yaml 的 redis host 由 "kvstore" 改 "host.docker.internal"。
 #  - 本套配置未在本仓库开发机验证(无 docker daemon)，首次请在 docker 主机按报错微调。
+#  - 安全：7080 仅绑宿主机回环(127.0.0.1:7080:7080)，proxy 不暴露宿主端口；
+#    公网入口走 deploy/edge 的 Nginx→frps→frpc→127.0.0.1:7080。
+#  - docker compose 前必须先运行 ../deploy/scripts/render-config.sh app（生成 docker/config/*.yaml）。
 name: echo-chat
 
 x-go-common: &go-common
@@ -95,8 +98,6 @@ services:
     volumes:
       - ../openai-api-proxy/dev.config.yaml:/app/config.yaml:ro
     command: ["./app","--config=config.yaml"]
-    ports:
-      - "8084:8084"
 
   ai-chat-service:
     <<: *go-common
@@ -129,7 +130,7 @@ services:
       - ai-chat-service
       - tokenizer
     ports:
-      - "7080:7080"
+      - "127.0.0.1:7080:7080"
 
 # volumes:
 #   kvstore-data:

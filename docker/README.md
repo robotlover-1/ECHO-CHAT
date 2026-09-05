@@ -8,11 +8,18 @@
 - DeepSeek key 走环境变量（勿写进配置）。
 
 ## 二、启动
+> **重要**：`docker/config/*.yaml` 现在是**渲染产物**（不入库）。启动前先：
+> ```bash
+> cp ../deploy/app/.env.example ../deploy/app/.env   # 并按需填写(生产必填向量库/FRP/DeepSeek 等)
+> ../deploy/scripts/render-config.sh app
+> ```
+> 宿主开发/CI 路径 `./start.sh`、`ai-chat-stack/` 不受影响；本仓库 docker compose 曾未验证（无 daemon），属安全收紧要件的取舍。
+
 ```bash
 cd docker
 DEEPSEEK_API_KEY=sk-xxx docker compose up -d --build
 docker compose ps              # 全部 running
-curl -s http://localhost:7080  # 前端（backend 提供静态页）
+curl -s http://localhost:7080  # 前端（backend 提供静态页；7080 仅绑宿主机回环，仍可从 localhost 访问）
 ```
 首次构建较久（go/pnpm/模型）。前端构建在 backend 镜像内自动完成（`node` stage + `pnpm build-only`）。
 
