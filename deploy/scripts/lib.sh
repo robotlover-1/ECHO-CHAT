@@ -94,3 +94,25 @@ assert_port_free() {
     die "端口 ${port} 已被占用"
   fi
 }
+
+# 渲染产物一致性抽检（P1-3）：把 .env 里的端口/域名与产物比对。
+check_consistency() {
+  local side="$1"
+  case "$side" in
+    app)
+      grep -q "serverPort: ${FRP_BIND_PORT:-}" "${REPO_ROOT}/deploy/app/tunnel/frpc.yaml" \
+        || die "frpc serverPort != FRP_BIND_PORT"
+      grep -q "customDomains:" "${REPO_ROOT}/deploy/app/tunnel/frpc.yaml" || die "frpc customDomains 缺失"
+      ;;
+    edge)
+      grep -q "bindPort: ${FRP_BIND_PORT:-}" "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml" \
+        || die "frps bindPort != FRP_BIND_PORT"
+      grep -q "vhostHTTPPort: ${FRP_VHOST_HTTP_PORT:-}" "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml" \
+        || die "frps vhostHTTPPort != FRP_VHOST_HTTP_PORT"
+      grep -q "server_name ${PUBLIC_DOMAIN:-};" "${REPO_ROOT}/deploy/edge/nginx/echo-chat.conf" \
+        || die "nginx server_name != PUBLIC_DOMAIN"
+      grep -q "proxy_pass http://127.0.0.1:${FRP_VHOST_HTTP_PORT:-}" "${REPO_ROOT}/deploy/edge/nginx/echo-chat.conf" \
+        || die "nginx upstream != FRP_VHOST_HTTP_PORT"
+      ;;
+  esac
+}

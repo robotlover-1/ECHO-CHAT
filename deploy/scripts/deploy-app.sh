@@ -19,6 +19,7 @@ preflight_host 8192 40960
 
 info "渲染配置..."
 bash "${REPO_ROOT}/deploy/scripts/render-config.sh" app
+check_consistency app
 
 info "启动 ECHO-CHAT 主栈..."
 docker compose --env-file "${APP_ENV}" -f "${COMPOSE_MAIN}" up -d --build

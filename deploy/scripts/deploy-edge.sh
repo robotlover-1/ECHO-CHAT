@@ -128,6 +128,7 @@ else
   reload_nginx
 fi
 
+check_consistency edge
 info "HTTPS 验收..."
 curl -fsS "https://${PUBLIC_DOMAIN}/api/health" >/dev/null \
   && info "https://${PUBLIC_DOMAIN} 验收通过" \
