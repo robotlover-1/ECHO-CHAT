@@ -20,6 +20,9 @@ case "${1:-}" in
     render_restricted "${REPO_ROOT}/docker/config/service.yaml.envsubst" \
       "${REPO_ROOT}/docker/config/service.yaml" \
       '${CHAT_SERVICE_TOKEN} ${FILTER_SERVICE_TOKEN} ${PROXY_API_KEY} ${KVSTORE_HOST} ${KVSTORE_PORT} ${MYSQL_DSN} ${VECTOR_DB_URL} ${VECTOR_DB_USER} ${VECTOR_DB_PWD} ${VECTOR_DB_NAME}'
+    render_restricted "${REPO_ROOT}/deploy/app/tunnel/frpc.yaml.envsubst" \
+      "${REPO_ROOT}/deploy/app/tunnel/frpc.yaml" \
+      '${FRP_SERVER_ADDR} ${FRP_BIND_PORT} ${FRP_AUTH_TOKEN} ${PUBLIC_DOMAIN}'
     ;;
   edge)
     EDGE_ENV="${REPO_ROOT}/deploy/edge/.env"

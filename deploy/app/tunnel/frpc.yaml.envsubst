@@ -1,0 +1,30 @@
+serverAddr: "${FRP_SERVER_ADDR}"
+serverPort: ${FRP_BIND_PORT}
+
+auth:
+  method: token
+  token: "${FRP_AUTH_TOKEN}"
+
+transport:
+  protocol: tcp
+  tcpMux: true
+  poolCount: 2
+  heartbeatInterval: 30
+  heartbeatTimeout: 90
+  tls:
+    enable: true
+
+loginFailExit: false
+
+log:
+  to: console
+  level: info
+  maxDays: 7
+
+proxies:
+  - name: echo-chat-web
+    type: http
+    localIP: 127.0.0.1
+    localPort: 7080
+    customDomains:
+      - "${PUBLIC_DOMAIN}"

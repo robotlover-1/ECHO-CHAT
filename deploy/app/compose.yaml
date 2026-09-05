@@ -1,0 +1,11 @@
+# frpc 独立栈（应用节点）。ECHO-CHAT 主栈见 docker/compose.yaml（deploy-app.sh 串起两者）。
+name: echo-chat-frpc
+
+services:
+  frpc:
+    image: ${FRPC_IMAGE:-snowdreamtech/frpc:0.62.1}
+    restart: unless-stopped
+    network_mode: host
+    command: ["-c", "/app/config.yaml"]
+    volumes:
+      - ./tunnel/frpc.yaml:/app/config.yaml:ro
