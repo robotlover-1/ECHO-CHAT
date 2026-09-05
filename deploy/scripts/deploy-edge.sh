@@ -66,9 +66,23 @@ start_nginx() {
   docker compose -f "${EDGE_DIR}/compose.yaml" up -d nginx
 }
 
+# reload 成功即删除 .prev；失败则回滚 .prev 再重启；两者皆败才 die。
 reload_nginx() {
-  docker compose -f "${EDGE_DIR}/compose.yaml" exec nginx nginx -s reload || \
-    docker compose -f "${EDGE_DIR}/compose.yaml" restart nginx
+  if docker compose -f "${EDGE_DIR}/compose.yaml" exec -T nginx nginx -s reload; then
+    rm -f "${NGINX_CONF}.prev"
+    return 0
+  fi
+  info "nginx reload 失败：尝试回滚 .prev 并 restart"
+  if [[ -f "${NGINX_CONF}.prev" ]]; then
+    cp -a "${NGINX_CONF}.prev" "${NGINX_CONF}"
+    chmod 644 "${NGINX_CONF}"
+  fi
+  if docker compose -f "${EDGE_DIR}/compose.yaml" restart nginx; then
+    info "已回滚 .prev 并 restart nginx"
+    rm -f "${NGINX_CONF}.prev"
+    return 0
+  fi
+  die "nginx reload 与 restart 均失败；.prev 已回滚到配置，请人工检查"
 }
 
 info "启动 frps..."
@@ -85,7 +99,12 @@ if [[ -f "${FULLCHAIN}" ]]; then
 else
   info "未发现证书，进入两阶段：bootstrap → certbot → HTTPS"
   render_bootstrap
-  start_nginx
+  # nginx 已在跑(如证书被删后的重跑)→ reload 应用 bootstrap；否则首启。
+  if docker compose -f "${EDGE_DIR}/compose.yaml" ps --status running nginx >/dev/null 2>&1; then
+    reload_nginx
+  else
+    start_nginx
+  fi
   sleep 2
 
   info "校验 DNS..."
