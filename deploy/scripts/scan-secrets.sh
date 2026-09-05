@@ -21,13 +21,13 @@ patterns=(
 hits=0
 while IFS= read -r f; do
   for p in "${patterns[@]}"; do
-    if grep -Eiq "$p" "$f"; then
+    if grep -Eiq -- "$p" "$f"; then
       echo "[scan] 命中 '$p' → $f"
       hits=$((hits+1))
     fi
   done
   # 渲染产物残留占位
-  if grep -qE 'CHANGE_ME|REPLACE_ME|<[^>]*>|sk-placeholder' "$f"; then
+  if grep -qE -- 'CHANGE_ME|REPLACE_ME|<[^>]*>|sk-placeholder' "$f"; then
     echo "[scan] 占位残留 → $f"
     hits=$((hits+1))
   fi
