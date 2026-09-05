@@ -49,10 +49,11 @@ render_restricted() {
   info "rendered: ${out}"
 }
 
-# 渲染产物不得残留未替换变量。
+# 只检测模板残留的 ${VAR}(花括号形式)；nginx 运行期变量 $host/$remote_addr 等为无花括号形式，
+# 属合法保留，不误判。
 guard_no_residue() {
-  if grep -qE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$1"; then
-    die "残留未替换变量: $(grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$1" | sort -u | tr '\n' ' ')"
+  if grep -qE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' "$1"; then
+    die "残留未替换变量: $(grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' "$1" | sort -u | tr '\n' ' ')"
   fi
 }
 
