@@ -27,10 +27,10 @@ case "${1:-}" in
   edge)
     EDGE_ENV="${REPO_ROOT}/deploy/edge/.env"
     guard_required "${EDGE_ENV}" \
-      PUBLIC_DOMAIN ADMIN_EMAIL FRP_AUTH_TOKEN FRP_DASHBOARD_PASSWORD
+      PUBLIC_DOMAIN ADMIN_EMAIL FRP_AUTH_TOKEN
     render_restricted "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml.envsubst" \
       "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml" \
-      '${FRP_BIND_PORT} ${FRP_VHOST_HTTP_PORT} ${FRP_AUTH_TOKEN} ${FRP_DASHBOARD_PASSWORD}'
+      '${FRP_BIND_PORT} ${FRP_VHOST_HTTP_PORT} ${FRP_AUTH_TOKEN}'
     # echo-chat.conf 由 deploy-edge.sh 决定写入哪个模板，此处不渲染。
     ;;
   *) die "用法: render-config.sh app|edge" ;;

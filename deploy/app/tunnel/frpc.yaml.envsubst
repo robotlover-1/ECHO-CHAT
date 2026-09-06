@@ -3,6 +3,9 @@ serverPort: ${FRP_BIND_PORT}
 
 auth:
   method: token
+  additionalScopes:
+    - HeartBeats
+    - NewWorkConns
   token: "${FRP_AUTH_TOKEN}"
 
 transport:

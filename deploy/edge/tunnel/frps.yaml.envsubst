@@ -6,17 +6,26 @@ vhostHTTPPort: ${FRP_VHOST_HTTP_PORT}
 
 auth:
   method: token
+  # 鉴权扩展到心跳与新工作连接（与 frpc 端一致；0.62.1 支持，目标机 frps verify 复核）。
+  additionalScopes:
+    - HeartBeats
+    - NewWorkConns
   token: "${FRP_AUTH_TOKEN}"
 
 transport:
   tcpMux: true
   maxPoolCount: 5
+  # 公网 39000 是公开控制入口：强制 TLS，拒绝非 TLS 客户端(与 frpc transport.tls.enable 配对)。
+  tls:
+    force: true
 
-webServer:
-  addr: 127.0.0.1
-  port: 7500
-  user: "frpadmin"
-  password: "${FRP_DASHBOARD_PASSWORD}"
+# Dashboard 默认关闭（最小暴露，评审 P0-3/P1-4 补位见 deploy/README 监控清单）。
+# 如需监控：加回 webServer，仅绑定 127.0.0.1，经 SSH 转发访问：
+#   webServer:
+#     addr: 127.0.0.1
+#     port: 7500
+#     user: "frpadmin"
+#     password: "<强密码>"
 
 log:
   to: console

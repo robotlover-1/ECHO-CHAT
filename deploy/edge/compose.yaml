@@ -1,4 +1,5 @@
 # 公网入口节点：frps + nginx。运行目录=deploy/edge（compose 自动读同目录 .env）。
+# 7500 dashboard 已关闭；39001/7500 均不对外。
 name: echo-chat-edge
 
 services:
@@ -11,7 +12,11 @@ services:
     ports:
       - "${FRP_BIND_PORT:-39000}:${FRP_BIND_PORT:-39000}"
       - "127.0.0.1:${FRP_VHOST_HTTP_PORT:-39001}:${FRP_VHOST_HTTP_PORT:-39001}"
-      - "127.0.0.1:7500:7500"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   nginx:
     image: nginx:1.27-alpine
@@ -21,5 +26,10 @@ services:
       - ./nginx/echo-chat.conf:/etc/nginx/conf.d/echo-chat.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     depends_on:
       - frps
