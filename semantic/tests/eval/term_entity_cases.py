@@ -50,6 +50,11 @@ RECOGNIZE = [
     ("python 的 list", "python_builtin_list", "python", "lang entity"),
     ("实现一个 cpp rbtree", "red_black_tree", "cpp", "fold+lang"),
     ("std::vector<int>", "cpp_std_vector", "cpp", "entity+type_args"),
+    # ---- 领域：electrical（制造公司电气设计；别名/ID 见 2026-09-06 design §起手概念集）----
+    ("接触器怎么选型", "elec_contactor", None, "domain electrical"),
+    ("断路器整定电流怎么算", "elec_breaker", None, "domain electrical"),
+    ("变频器的载波频率怎么设", "elec_inverter", None, "domain electrical"),
+    ("外壳怎么接地", "elec_grounding", None, "domain electrical"),
 ]
 
 # ============================================================= ② MISS 术语识别未命中 ==
@@ -63,6 +68,10 @@ MISS = [
     ("C++ list 和 vector 有什么区别", "multiple_subjects"),  # 多实体 cpp list(vector≠list family 也不同)+vector 并列 → 多主题
     ("company::list", "subject_unresolved"),            # 自定义非白名单 ns(company::) 剥不去 → 全局不映射；lang 表只 std 白名单 → None
     ("java 的 List", "subject_unresolved"),              # ja List 在语言实体表为 ambiguous → 不映射 → None
+    # ---- 领域通用 MISS：公司裸词未建档/无概念命中 → 不入缓存 ----
+    ("这个螺丝拧不动怎么办", "subject_unresolved"),
+    ("为什么经常烧保险", "subject_unresolved"),          # “保险丝”才会识别 elec_fuse；“烧保险”不含“丝”→ None
+    ("这个按钮按了没反应", "subject_unresolved"),
 ]
 
 # ============================================================= ③ REJECT_PAIRS 边界该拒 ==
@@ -87,6 +96,7 @@ FP_ELIGIBLE_SAFE = [
     ("生成一个 rbtree", True),          # alias_of 概念(red_black_tree)→ 指纹可直命
     ("用 C++ 写一个 list", False),       # library_type 实体 → 不进指纹（只向量+decision）
     ("std::list<int>", False),          # type_args 模板 → 不进指纹
+    ("什么是接触器", True),
 ]
 
 # ============================================== 摘要 ============

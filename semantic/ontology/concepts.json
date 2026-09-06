@@ -81,6 +81,18 @@
     {"id": "grpc", "canonical_zh": "grpc 协议", "canonical_en": "grpc",
      "aliases": ["gRPC", "grpc协议", "grpc 协议"]},
     {"id": "restful", "canonical_zh": "restful 风格", "canonical_en": "restful",
-     "aliases": ["restful", "rest", "rest api", "restful api", "restful风格", "rest接口"]}
+     "aliases": ["restful", "rest", "rest api", "restful api", "restful风格", "rest接口"]},
+    {"id": "elec_schematic", "canonical_zh": "原理图", "canonical_en": "schematic", "aliases": ["原理图", "电气原理图", "电路图", "schematic", "schematics", "circuit diagram"], "group": "electrical"},
+    {"id": "elec_harness", "canonical_zh": "线束", "canonical_en": "wiring harness", "aliases": ["线束", "线束设计", "线束布置", "wiring harness", "harness"], "group": "electrical"},
+    {"id": "elec_contactor", "canonical_zh": "接触器", "canonical_en": "contactor", "aliases": ["接触器", "交流接触器", "contactor", "ac contactor"], "group": "electrical"},
+    {"id": "elec_relay", "canonical_zh": "继电器", "canonical_en": "relay", "aliases": ["继电器", "中间继电器", "relay", "relays"], "group": "electrical"},
+    {"id": "elec_breaker", "canonical_zh": "断路器", "canonical_en": "circuit breaker", "aliases": ["断路器", "空气开关", "空开", "circuit breaker", "breaker", "mcb"], "group": "electrical"},
+    {"id": "elec_motor", "canonical_zh": "电机", "canonical_en": "electric motor", "aliases": ["电机", "电动机", "马达", "motor", "electric motor"], "group": "electrical"},
+    {"id": "elec_plc", "canonical_zh": "PLC", "canonical_en": "programmable logic controller", "aliases": ["plc", "可编程逻辑控制器", "可编程控制器"], "group": "electrical"},
+    {"id": "elec_inverter", "canonical_zh": "变频器", "canonical_en": "frequency inverter", "aliases": ["变频器", "vfd", "variable frequency drive"], "group": "electrical"},
+    {"id": "elec_transformer", "canonical_zh": "变压器", "canonical_en": "transformer", "aliases": ["变压器", "transformer"], "group": "electrical"},
+    {"id": "elec_fuse", "canonical_zh": "熔断器", "canonical_en": "fuse", "aliases": ["熔断器", "保险丝", "fuse"], "group": "electrical"},
+    {"id": "elec_emc", "canonical_zh": "电磁兼容", "canonical_en": "electromagnetic compatibility", "aliases": ["电磁兼容", "emc"], "group": "electrical"},
+    {"id": "elec_grounding", "canonical_zh": "接地", "canonical_en": "grounding", "aliases": ["接地", "保护接地", "屏蔽接地", "grounding"], "group": "electrical"}
   ]
 }
