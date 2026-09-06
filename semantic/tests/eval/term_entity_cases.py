@@ -82,6 +82,10 @@ MISS = [
     ("这个螺丝拧不动怎么办", "subject_unresolved"),
     ("为什么经常烧保险", "subject_unresolved"),          # “保险丝”才会识别 elec_fuse；“烧保险”不含“丝”→ None
     ("这个按钮按了没反应", "subject_unresolved"),
+    # ---- 裸别名修剪守卫（2026-09-06 评审修订）：结构/can 已从概念别名删除 → 下列 CS/通用句不得再被误吸 ----
+    ("数据结构怎么学", "subject_unresolved"),            # 删 mech_structure 裸「结构」后不再命中
+    ("C语言结构体怎么定义", "subject_unresolved"),        # 同前（语言 c 下亦不映射）
+    ("how can I debug", "subject_unresolved"),           # 删 emb_can 裸「can」后英文泛句不再命中
 ]
 
 # ============================================================= ③ REJECT_PAIRS 边界该拒 ==

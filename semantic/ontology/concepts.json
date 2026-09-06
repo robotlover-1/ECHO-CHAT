@@ -94,7 +94,7 @@
     {"id": "elec_fuse", "canonical_zh": "熔断器", "canonical_en": "fuse", "aliases": ["熔断器", "保险丝", "fuse"], "group": "electrical"},
     {"id": "elec_emc", "canonical_zh": "电磁兼容", "canonical_en": "electromagnetic compatibility", "aliases": ["电磁兼容", "emc"], "group": "electrical"},
     {"id": "elec_grounding", "canonical_zh": "接地", "canonical_en": "grounding", "aliases": ["接地", "保护接地", "屏蔽接地", "grounding"], "group": "electrical"},
-    {"id": "mech_structure", "canonical_zh": "结构件", "canonical_en": "mechanical structure", "aliases": ["结构件", "结构设计", "机械结构", "结构"], "group": "mechanical"},
+    {"id": "mech_structure", "canonical_zh": "结构件", "canonical_en": "mechanical structure", "aliases": ["结构件", "结构设计", "机械结构"], "group": "mechanical"},
     {"id": "mech_modeling", "canonical_zh": "三维建模", "canonical_en": "3d modeling", "aliases": ["三维建模", "3d建模", "三维模型", "3d模型"], "group": "mechanical"},
     {"id": "mech_drawing", "canonical_zh": "工程图", "canonical_en": "engineering drawing", "aliases": ["工程图", "出图", "二维图", "图纸", "engineering drawing"], "group": "mechanical"},
     {"id": "mech_tolerance", "canonical_zh": "公差", "canonical_en": "tolerance", "aliases": ["公差", "尺寸公差", "形位公差", "公差配合", "tolerance"], "group": "mechanical"},
@@ -113,7 +113,7 @@
     {"id": "emb_serial", "canonical_zh": "串口", "canonical_en": "serial communication", "aliases": ["串口", "uart", "rs232", "串口通信", "serial"], "group": "embedded"},
     {"id": "emb_i2c", "canonical_zh": "I2C", "canonical_en": "i2c bus", "aliases": ["i2c", "iic"], "group": "embedded"},
     {"id": "emb_spi", "canonical_zh": "SPI", "canonical_en": "spi bus", "aliases": ["spi"], "group": "embedded"},
-    {"id": "emb_can", "canonical_zh": "CAN总线", "canonical_en": "can bus", "aliases": ["can", "can总线", "can通信", "can bus"], "group": "embedded"},
+    {"id": "emb_can", "canonical_zh": "CAN总线", "canonical_en": "can bus", "aliases": ["can总线", "can 总线", "can通信", "can bus"], "group": "embedded"},
     {"id": "emb_watchdog", "canonical_zh": "看门狗", "canonical_en": "watchdog", "aliases": ["看门狗", "watchdog"], "group": "embedded"},
     {"id": "emb_bootloader", "canonical_zh": "引导程序", "canonical_en": "bootloader", "aliases": ["bootloader", "引导程序", "启动流程"], "group": "embedded"}
   ]
