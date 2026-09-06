@@ -96,7 +96,7 @@ ECHO-CHAT 是制造业公司内部的问答助手：电气/机械设计工程师
 
 在 `semantic/tests/eval/term_entity_cases.py` 按既有四段补充，逐条走完整 parse：
 - **RECOGNIZE**：每领域 ≥3 条，断言命中目标 id，例如 `("接触器怎么选型","elec_contactor")`、`("FreeRTOS 任务优先级怎么调","emb_rtos")`、`("齿轮齿数怎么定","mech_transmission")`；
-- **MISS**（防误吸，重点）：跨域/裸别名陷阱句不得串主题，例如 `("电机座结构设计","mech_structure")`、`("外壳要不要接地","elec_grounding")`、`("电机驱动的 IGBT 怎么选","elec_contactor" 不得命中 → 见实现取实际语义)`；
+- **MISS**（防误吸，重点）：跨域/裸别名陷阱句不得串主题，例如 `("电机座结构设计","mech_structure")`（内含"电机"但应命中最长别名"结构设计"）、`("外壳要不要接地","elec_grounding")`；未命中任何概念应断言 subject 未知：`("这个螺丝拧不动怎么办", subject_id=None)`。跨域产品/零件短语（如"电机驱动的 IGBT 选型"内含裸词"电机"→ 确定性命中 elec_motor）属**内容取舍**：实现时显式定夺期望 subject 并用 eval 锁死，若判"不应归 elec_motor"则以 MISS(None) 断言并配合别名改写，不靠歧义容忍。
 - **REJECT_PAIRS / 共享 OK 对**：跨域不共享（`接触器选型` vs `轴承选型`）与域内改写共享（`接触器怎么选型` ↔ `如何选型接触器`）双向断言；
 - **FP_ELIGIBLE_SAFE**：新概念属 `alias_of` → 补 1 例断言 `fingerprint_eligible=True`、可走 fp 快路径。
 
