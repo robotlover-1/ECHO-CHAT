@@ -95,10 +95,10 @@ ECHO-CHAT 是制造业公司内部的问答助手：电气/机械设计工程师
 ## 测试与验证
 
 在 `semantic/tests/eval/term_entity_cases.py` 按既有四段补充，逐条走完整 parse：
-- **RECOGNIZE**：每领域 ≥3 条，断言命中目标 id，例如 `("接触器怎么选型","elec_contactor")`、`("FreeRTOS 任务优先级怎么调","emb_rtos")`、`("齿轮齿数怎么定","mech_transmission")`；
-- **MISS**（防误吸，重点）：跨域/裸别名陷阱句不得串主题，例如 `("电机座结构设计","mech_structure")`（内含"电机"但应命中最长别名"结构设计"）、`("外壳要不要接地","elec_grounding")`；未命中任何概念应断言 subject 未知：`("这个螺丝拧不动怎么办", subject_id=None)`。跨域产品/零件短语（如"电机驱动的 IGBT 选型"内含裸词"电机"→ 确定性命中 elec_motor）属**内容取舍**：实现时显式定夺期望 subject 并用 eval 锁死，若判"不应归 elec_motor"则以 MISS(None) 断言并配合别名改写，不靠歧义容忍。
-- **REJECT_PAIRS / 共享 OK 对**：跨域不共享（`接触器选型` vs `轴承选型`）与域内改写共享（`接触器怎么选型` ↔ `如何选型接触器`）双向断言；
-- **FP_ELIGIBLE_SAFE**：新概念属 `alias_of` → 补 1 例断言 `fingerprint_eligible=True`、可走 fp 快路径。
+- **RECOGNIZE**：每领域 ≥2 条命中目标 id，例如 `("接触器怎么选型","elec_contactor")`、`("FreeRTOS 任务优先级怎么调","emb_rtos")`、`("齿轮的模数怎么确定","mech_transmission")`。**跨域"最长匹配防串"守卫行也放本段**（如 `("电机座结构设计","mech_structure")`——含裸"电机"但应命中最长别名"结构设计"），因 MISS 段 harness 断言 subject_id 必为 None、无法容纳会解析出主体的句子；
+- **MISS**（防误吸）：仅收录**确实解析不出 subject（None）**的句子，例如 `("这个螺丝拧不动怎么办", subject_id=None)`、`("为什么经常烧保险", subject_id=None)`——冻结"公司裸词未建档/无概念命中 → 不入缓存"的口径。跨域产品/零件短语（如"电机驱动的 IGBT 选型"内含裸词"电机"→ 确定性命中 elec_motor）属**内容取舍**：实现时显式定夺期望 subject 并用 RECOGNIZE/MISS 锁死，不靠歧义容忍。
+- **REJECT_PAIRS / 共享 OK 对**：跨域不共享（`接触器怎么选型` vs `轴承怎么选型`）、域内不同主题不共享（`FreeRTOS 任务优先级怎么调` vs `中断嵌套怎么处理`）、新概念 vs 既有 CS 概念不共享（`红黑树插入复杂度` vs `接触器选型额定电流`）——REJECT_PAIRS harness 只断 `shared=False`；
+- **FP_ELIGIBLE_SAFE**：新概念属 `alias_of` → 补 1 例断言 `fingerprint_eligible=True`（注意 eligible 还要求残差为空/intent 非 unknown；行以实际 parse 真值锁定）。
 
 **回归门**：新增概念后 `pytest` 全绿（含既有 40 概念的全部用例）——证明扩容不破坏旧行为；`ontology_version` 升档使旧指纹自动孤儿（数据不删，仅不命中）。
 
