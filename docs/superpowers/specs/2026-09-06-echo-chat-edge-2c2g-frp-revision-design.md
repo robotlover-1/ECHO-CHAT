@@ -1,83 +1,102 @@
-# ECHO-CHAT 边缘 2核2G FRP 部署修订 —— spec
+# ECHO-CHAT 边缘 2核2G FRP 部署修订 —— spec（rev2）
 
-> 日期：2026-09-06
-> 主方案（权威）：`docs/deploy/2026-09-06-echo-chat-direct-public-deployment-and-tunnel-removal.md`
-> 目标分支：`fix/edge-2c2g-frp-deployment`（不改 `main`）
-> 基线：`main@4022ad0`（上轮 FRP 部署系列已推送 origin/main）
+> 日期：2026-09-06（rev2：按 `tmp/t1/2026-09-06-echo-chat-edge-2c2g-frp-revision-review.md` 合入 P0-1~4 + P1-1~8）
+> 主方案（权威）：`docs/deploy/2026-09-06-echo-chat-direct-public-deployment-and-tunnel-removal.md`（**新增归档，不改写原文**）
+> 目标分支：`fix/edge-2c2g-frp-deployment`；基线 `main@4022ad0`
+> 评审结论：**有条件通过**；完成 4 项 P0 + P1 后实施，真实 2核2G + 端到端验收后合入 main/上线。
 
-## 1. 背景与结论
+## 1. 架构结论（不变）
 
-上一版实现的固定 FRP 双节点链路是**最终正确架构**：公网 2核2G 云服务器只跑 `frps + Nginx + Certbot`；本地机器跑完整 `ECHO-CHAT + frpc`（`127.0.0.1:7080` 主动连云端 `39000`）。**不回退、不删除 FRP**（文档 §2/§3/§11）。
+固定 FRP 双节点不回退：公网 2核2G 云主机只跑 `frps + Nginx + Certbot`；本地跑完整 `ECHO-CHAT + frpc`（`127.0.0.1:7080` 主动连云端 `39000`）。
 
-本 spec 只做 §10 的收敛修订（用户已确认）：
-- README 双节点角色与资源明确；
-- edge 预检阈值下调至适配 2GB 云主机；
-- `deploy-edge.sh` 只做云端自检（frps/Nginx/TLS），端到端等 frpc 上线后用 smoke 验；
-- 云端 frps/Nginx 日志轮转；
-- **关闭 frps Dashboard**（移除 webServer 块、7500 映射、`FRP_DASHBOARD_PASSWORD` 密钥与 guard/白名单引用）。
+## 2. P0 修订决策
 
-## 2. 改动清单（6 文件）
+### P0-1 服务端强制 TLS
+- `deploy/edge/tunnel/frps.yaml.envsubst` transport 加 `tls.force: true`（frpc 已 `tls.enable: true`；frps 需拒绝非 TLS 客户端）。
+- 渲染冒烟断言：`grep -A5 '^transport:'` 产物含 `force: true`。
+- 目标机负向用例：非 TLS 临时 frpc 登录应失败（T07）。
 
-### 2.1 `deploy/scripts/deploy-edge.sh`
-1. `preflight_host 2048 40960` → `preflight_host 1536 20480`。
-2. 结尾"HTTPS 验收"拆分（云端自检不再依赖本地 app 在线）：
-   - 先 `docker compose … ps frps nginx` 确认 running；
-   - `code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${PUBLIC_DOMAIN}/api/health" 2>/dev/null) || code=000`；
-   - `000`（或 curl 失败）→ `die`（TLS/nginx 真故障，查 80/443 安全组与日志）；
-   - `502|503` → 不 die，info 提示"本地 ECHO-CHAT 未连接——frpc 上线后再跑 `smoke-test.sh edge`"；
-   - 其它 code → info 提示跑 `smoke-test.sh edge/e2e`；
-   - 保留末尾 renew-hook 提示行。
+### P0-2 容器状态守卫不能依赖 `docker compose ps` 退出码
+- `deploy-edge.sh` 新增 `assert_service_running <svc>`：`compose ps -q` 为空 → die；`docker inspect -f '{{.State.Status}}'` != `running` → die。
+- 另加宿主机 TCP 就绪等待 `wait_tcp <host> <port> <secs>`（bash `/dev/tcp`，不依赖镜像内工具）：frps 起后等 `127.0.0.1:${FRP_BIND_PORT}`；nginx bootstrap 起后等 `80`；全量 HTTPS 路径等 `443`。
 
-### 2.2 `deploy/edge/compose.yaml`
-- 删除 frps 的 `"127.0.0.1:7500:7500"` 映射（dashboard 关闭）。
-- `frps` 与 `nginx` 各加：
-  ```yaml
-  logging:
-    driver: json-file
-    options:
-      max-size: "20m"
-      max-file: "3"
+### P0-3 HTTPS 自检确定性（新增 `/edge-healthz` + 状态码分类）
+- `deploy/edge/nginx/echo-chat.conf.envsubst` 的 443 server（及 80 server）加：
+  ```nginx
+  location = /edge-healthz {
+      access_log off;
+      default_type text/plain;
+      return 200 "ok\n";
+  }
   ```
+  （模板变量仍仅 `PUBLIC_DOMAIN`/`FRP_VHOST_HTTP_PORT`。）
+- `deploy-edge.sh` 结尾拆分两类检查：
+  1. TLS/Nginx 自检：`curl -fsS --max-time 15 "https://${PUBLIC_DOMAIN}/edge-healthz"` → 失败即 die（DNS/TLS/Nginx 问题，含 404/301/500 等一并暴露）。
+  2. 业务链路分类 `/api/health`：
+     ```bash
+     code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${PUBLIC_DOMAIN}/api/health" 2>/dev/null) || code=000
+     case "$code" in
+       200)   info "ECHO-CHAT 链路已连通" ;;
+       502|503|504) info "edge 正常；本地 frpc/ECHO-CHAT 未就绪，frpc 上线后跑 smoke-test edge" ;;
+       000)   die "HTTPS 连接失败" ;;
+       *)     die "HTTPS 返回非预期状态 ${code}，检查 Nginx 路由" ;;
+     esac
+     ```
 
-### 2.3 `deploy/edge/tunnel/frps.yaml.envsubst`
-- 删除 `webServer:`（addr/port/user/password）整块，替换为注释：Dashboard 默认关闭；如需监控加回 webServer 且只绑 127.0.0.1，经 SSH 转发访问。
+### P0-4 把 smoke-test.sh 纳入范围，按真实协议修复 e2e 流式验收
+真实协议已由代码确认：`pkg/controllers/chat.go` 每 chunk `json.Marshal(result)`，帧间 `\n`（首帧前无分隔，EOF 前补 `\n` 后写末帧 JSON）→ **NDJSON 新行分隔**。
+`smoke-test.sh e2e` 重写断言：
+- `trap 'rm -f "${out}"' EXIT`（非 RETURN）；
+- `curl -sS --max-time 120 -o "$out" -w '%{http_code}' …`，保存 code 与退出码；**要求 HTTP 200**，否则 die（含网关 HTML/错误 JSON 由 code/结构断言排除）；
+- 按 NDJSON 统计：过滤空行后非空行数 = 帧数，**≥2**（单帧聚合/单一错误 JSON 均不通过）；
+- 每帧结构校验：存在 `python3` 时逐行 `json.loads`；无 python3 时退化为行首 `{` 且行尾 `}` 的结构断言；
+- 首字节 <30s、总时长 <120s（curl max-time 兜底），分开报告；
+- 保留浏览器真登录+流式的人工验收提示（master §9）。
 
-### 2.4 `deploy/edge/.env.example`
-- 删除 `FRP_DASHBOARD_PASSWORD` 行；
-- 新增可选 `#PUBLIC_IP=<云主机公网IPv4>`（供 deploy-edge DNS 校验，注释：留空则退化为提示不硬校验）。
+## 3. P1 采纳决策（同批提交）
 
-### 2.5 `deploy/scripts/render-config.sh`
-- edge 分支 `guard_required` 去掉 `FRP_DASHBOARD_PASSWORD`；
-- edge frps `render_restricted` 白名单去掉 `${FRP_DASHBOARD_PASSWORD}`（模板不再引用）。
+- **P1-1 鉴权扩展**：frps 与 frpc `auth.additionalScopes: [HeartBeats, NewWorkConns]`（0.62.1 支持；目标机 `frps verify`/`frpc verify` 复核）。
+- **P1-2 健康/就绪**：用宿主机 TCP 等待 + `assert_service_running` 替代镜像内 healthcheck（镜像工具集不确定，避免 bootstrap 期 443 未起造成 nginx unhealthy 抖动）；README 说明取舍。
+- **P1-3 资源**：README 给 swap 创建步骤与"容器内存上限需先在真实流量采样（量级 nginx 256MB、frps 256–512MB），不作未验证硬标准"；`preflight_host 1536 20480` 保留。
+- **P1-4 Dashboard 删除后观测补位**：README 增监控清单（容器/39000 监听/`/edge-healthz`+HTTPS 探测/5xx·带宽·CPU·内存·磁盘告警/frpc 离线告警）。
+- **P1-5 39000 访问策略**：README 写明出口 IP 稳定→安全组仅限该 IP；动态→临时开放但必须 TLS 强制+高强度 token+登录失败监控+定期轮换。
+- **P1-6 镜像固定为上线前验收**：README 增"上线前镜像核对"项（架构/ENTRYPOINT/配置路径/`verify -c`/两端版本/digest）。
+- **P1-7 文档数量/范围修正**：见 §4/§5 精确清单（master 为新增归档、不修改）。
+- **P1-8 真实 2核2G 验证为合并/上线门禁**：见 §6 验收与"合并前门禁"表述；不在本提交执行。
 
-### 2.6 `deploy/README.md`
-- "双节点"改为"双节点角色与资源"：
-  - 本地应用节点：完整 ECHO-CHAT（docker/compose，127.0.0.1:7080）+ frpc；建议 ≥4核8GB/80GB；本地断电/休眠/断网即断公网。
-  - 公网边缘节点：仅 frps+Nginx+Certbot（deploy/edge），2核2G/40GB 即可；不运行 ECHO-CHAT/MySQL/语义模型。
-  - 请求链路：`https://域名 → 云端Nginx:443 → 127.0.0.1:39001(frps vhost) → FRP隧道 → 本地frpc → 127.0.0.1:7080`。
-  - 域名 A 记录：`chat.example.com → 云端公网IPv4`（与本地宽带无关；大陆服务器需 ICP 备案提示）。
-- 首启顺序说明：edge 可先于本地部署；`deploy-edge.sh` 只验云端（frps/Nginx/TLS），端到端待 frpc 上线后 `smoke-test.sh edge/e2e`。
-- "单机演示"标注：**仅功能测试，非推荐生产**（生产用双节点）。
-- MySQL 小节措辞"应用 VM"→"本地应用节点/宿主机"（host.docker.internal）。
-- 安全组/镜像注意：39001/7500 不开放、dashboard 默认关闭；镜像同版本、目标机验证后固定 digest。
+## 4. 改动清单（实现文件 10 个）
 
-### 2.7 不改动
-- `docker/compose.yaml`（本地侧）、backend Go、`docker/config`、smoke/scan 逻辑、master `docs/deploy/2026-09-06-*.md` 全文（归档，仅作参考）。
-- 上轮 spec `2026-09-05-*.design.md` 与计划保持历史原样（不回改）。
+| # | 文件 | 改动 |
+|---|---|---|
+| 1 | `deploy/edge/tunnel/frps.yaml.envsubst` | transport 加 `tls.force: true`；auth 加 `additionalScopes`；删 `webServer:` 块(注释说明按需加回且只绑回环) |
+| 2 | `deploy/app/tunnel/frpc.yaml.envsubst` | auth 加 `additionalScopes`（tls.enable 已 true） |
+| 3 | `deploy/edge/nginx/echo-chat.conf.envsubst` | 443/80 server 加 `location = /edge-healthz` |
+| 4 | `deploy/scripts/deploy-edge.sh` | 预检 `1536 20480`；加 `assert_service_running`+`wait_tcp`；起 frps/nginx 后就绪等待；frps verify(best-effort, bind-mount)；结尾拆 TLS 自检(`/edge-healthz`)与业务码分类(200/502,503,504/000/*) |
+| 5 | `deploy/scripts/deploy-app.sh` | frpc verify 改为 bind-mount `frpc.yaml`（修复 no-op） |
+| 6 | `deploy/edge/compose.yaml` | 删 `127.0.0.1:7500:7500`；frps/nginx 各加 `logging 20m×3` |
+| 7 | `deploy/scripts/render-config.sh` | edge `guard_required`/白名单去 `FRP_DASHBOARD_PASSWORD` |
+| 8 | `deploy/edge/.env.example` | 删 `FRP_DASHBOARD_PASSWORD`；加注释 `#PUBLIC_IP=` |
+| 9 | `deploy/scripts/smoke-test.sh` | e2e 按 P0-4 重写 |
+| 10 | `deploy/README.md` | 双节点角色/资源/请求链路/域名；单机演示=功能测试；首启顺序(edge 先、e2e 待 frpc)；MySQL 措辞；监控补位；39000 策略；镜像核对；swap/内存上限指引；上线前门禁清单 |
 
-## 3. 验证（本机静态）
-- `bash -n`：deploy-edge.sh / render-config.sh；
-- `python3` yaml 解析：edge/compose.yaml、edge/tunnel/frps.yaml.envsubst；
-- edge 渲染冒烟：dummy `.env`（无 dashboard 变量）→ `render-config.sh edge` 通过、frps.yaml 无 `webServer`/无 `${` 残留；
-- `grep` 确认改动后仓库无 `FRP_DASHBOARD_PASSWORD` 与 `:7500:` 引用残留（deploy 范围）；
-- 结尾自检分支手工 `bash` 单测（`code` 三态：000→die、502/503→不 die、200→不 die）。
+**不改动**：`docker/compose.yaml`、backend Go、`docker/config`、`master docs/deploy/2026-09-06-*.md`（新增归档不修改）、历史 spec/计划。
 
-## 4. 提交
-- 分支 `fix/edge-2c2g-frp-deployment`，单提交：
-  `fix(deploy): adapt FRP edge deployment for 2c2g server`
-- 提交范围：上述 7 文件 + 本 spec + master 归档 `docs/deploy/2026-09-06-*.md`。
-- push `origin fix/edge-2c2g-frp-deployment`；**不动 main**，后续可 PR 合入。
-- 提交纪律同前：不 stage `openai-api-proxy/dev.config.yaml`、`kvstore/`。
+## 5. 文档与提交（数量精确）
+分支 `fix/edge-2c2g-frp-deployment` 上共三类提交文件：
+- 新增归档：`docs/deploy/2026-09-06-echo-chat-direct-public-deployment-and-tunnel-removal.md`（1，已入 bea584f）
+- 本 spec：`docs/superpowers/specs/2026-09-06-echo-chat-edge-2c2g-frp-revision-design.md`（1，rev2 修订）
+- 实现文件：上表 10 个
+提交形态：spec 单独提交；实现为一个 `fix(deploy): adapt FRP edge deployment for 2c2g server` 提交（或按 reviewer §6 顺序拆 2 提交：a 模板/安全/自检，b smoke/README/收口）。push 分支，不动 main。
 
-## 5. 目标机待验（不属本提交）
-真实 2核2G 云主机按 README 部署；`deploy-edge.sh` 首次在本地 app 未上线时可成功（无 000），frpc 上线后 `smoke-test.sh edge/e2e`；容器日志轮转生效；39001/7500 公网不可达。
+## 6. 验证
+本机静态：
+- `bash -n`：deploy-edge.sh/deploy-app.sh/smoke-test.sh/render-config.sh；
+- yaml 解析：edge compose、frps/frpc/envsubst；
+- edge 渲染冒烟：dummy `.env`（无 dashboard）→ frps.yaml 含 `tls.force: true`/`additionalScopes`、无 `webServer`、无 `${` 残留；frpc 渲染含 `additionalScopes`；
+- nginx conf envsubst 含 `/edge-healthz`，本地 `nginx -t` wrapper（自签）通过；
+- e2e 断言单测：构造 NDJSON≥2 帧样本通过、1 帧/HTML/非 200 均失败（抽成可测函数）；
+- `grep` deploy 范围无 `FRP_DASHBOARD_PASSWORD`/`:7500:` 残留。
+目标机（**合并/上线门禁，不属本提交**）：T01–T18 见 master §13 + review §7；先 L1→L4 分层，frpc 断连/恢复、云主机重启、证书续期演练；记录到验收文档。
+
+## 7. 提交纪律
+不 stage `openai-api-proxy/dev.config.yaml`、`kvstore/`；改动含 `.env.example`/模板仍遵守纯 `${VAR}`、无真实凭据。
