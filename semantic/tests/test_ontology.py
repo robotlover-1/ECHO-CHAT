@@ -6,7 +6,7 @@ from ontology import load, lookup_subject_id, ONTOLOGY_VERSION
 
 def test_loader_loads_version():
     d = load()
-    assert d["concepts"] and ONTOLOGY_VERSION == "2026-09-03.1"
+    assert d["concepts"] and ONTOLOGY_VERSION == "2026-09-06.1"
 
 @pytest.mark.parametrize("text,expect", [
     ("红黑树", "red_black_tree"),

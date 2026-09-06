@@ -2,7 +2,7 @@
 import json, os, re, unicodedata
 
 SCHEMA_VERSION = "v1"
-ONTOLOGY_VERSION = "2026-09-03.1"
+ONTOLOGY_VERSION = "2026-09-06.1"
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _NS_WHITELIST = ("std::",)   # 白名单 namespace：解析待匹配文本/别名时剥离此前缀

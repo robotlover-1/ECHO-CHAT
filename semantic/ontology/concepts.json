@@ -1,6 +1,6 @@
 {
   "schema": "v1",
-  "ontology_version": "2026-09-03.1",
+  "ontology_version": "2026-09-06.1",
   "concepts": [
     {"id": "red_black_tree", "canonical_zh": "红黑树", "canonical_en": "red black tree",
      "aliases": ["红黑树", "rbtree", "rb tree", "rb-tree", "red black tree", "red-black tree", "redblacktree", "red black trees"]},
