@@ -38,6 +38,8 @@
 2. **alias_of 抽象 family 概念 → 其“实现族” token**：仅影响内部 `implementation_family`（比较用），不进指纹 payload、不影响 eligible；`array` 族专门规范到 lang 侧 token `dynamic_array`（两侧同 family，供受控 family_compat）。
 3. **语言受限库/内建/类实体**（`ontology/lang_terms.json`：cpp `list`→`cpp_std_list`、cpp `vector<int>`→`cpp_std_vector(int)`、python `list`→`python_builtin_list`、java `List`→**ambiguous**…）。仅在**检测到该语言**时尝试，编 `subject_kind ∈ {library_type, builtin_type, class}`、`namespace`（实体表记 `std` 白名单）、`type_args`（`std::vector<int>` 的 `<int>`）。
 
+**领域分组（制造业三类设计域，2026-09-06）：** `ontology/concepts.json` 追加三类工程 subject 概念（id 带领域前缀 `elec_`/`mech_`/`emb_`，条目带 `group ∈ {electrical, mechanical, embedded}` 标注）。`group` **仅供维护归组/测试归类，永不进运行时判定**——跨域问句能否共享缓存只由 subject_id 决定（如"电机选型"电气/机械工程师同问同一 id 可互中）。validator 强制：group 值须在白名单、领域前缀 id 须带对应 group（漏标/标错启动即失败）。别名全库跨概念唯一（启动校验）。升级概念用 **eval-first**：先在 `tests/eval/term_entity_cases.py` 补 RECOGNIZE（期望命中）+ MISS（防回归），再加 `concepts.json`，`validator.py`+`pytest` 过即合。新增领域只需扩 validator 白名单 + 定新前缀。
+
 **唯一性/多主题：** 同一 span 命中 ≥2 个不同实体（如 `list 和 vector`）→ `multi_subject=True`（subject 置 None，fingerprint_eligible=False）。同长多命中歧义→保守 None。
 
 **语言门控（`detect_language`/`extract_language`）：**
