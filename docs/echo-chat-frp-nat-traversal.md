@@ -116,7 +116,7 @@ flowchart LR
     D --> E["FRP 工作连接(经 39000 控制通道复用 tcpMux)"]
     E --> F["本地 frpc"]
     F --> G["本地 127.0.0.1:7080 ECHO-CHAT"]
-    G -.逐帧 NDJSON 回流.-> A
+    G -.->|"逐帧 NDJSON 回流"| A
 ```
 
 > Nginx 一侧为了流式不聚合，用了 `proxy_buffering off; gzip off; add_header X-Accel-Buffering no;` 并把 `X-Forwarded-For` **覆盖式**写为 `$remote_addr`（防伪造来源，P0-3 评审项）。
@@ -134,7 +134,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A[本地: ./start.sh 或 docker compose 跑起 ECHO-CHAT] --> B["127.0.0.1:7080 可访问"]
+    A["本地: ./start.sh 或 docker compose 跑起 ECHO-CHAT"] --> B["127.0.0.1:7080 可访问"]
     B --> C["frpc 渲染+启动 (deploy-app.sh / 手工二进制)"]
     C --> D["登录云端 frps 成功, 代理 echo-chat 注册"]
     D --> E["云 edge: deploy-edge.sh"]
