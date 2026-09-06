@@ -103,6 +103,15 @@ assert_service_running() {
   [[ "${status}" == "running" ]] || die "${service} 状态=${status:-未知}(期望 running)"
 }
 
+# nginx 是否已在运行：ps -q 得 cid + docker inspect==running。不依赖 compose ps 退出码
+# (首次运行时服务未创建，`compose ps --status running` 可能返回 0 导致误走 reload)。
+nginx_up() {
+  local cid
+  cid="$(docker compose -f "${EDGE_DIR}/compose.yaml" ps -q nginx 2>/dev/null || true)"
+  [[ -z "${cid}" ]] && return 1
+  [[ "$(docker inspect -f '{{.State.Status}}' "${cid}" 2>/dev/null || true)" == "running" ]]
+}
+
 # 宿主机 TCP 就绪等待（bash /dev/tcp，不依赖镜像工具）。超时默认 30s。
 wait_tcp() {
   local host="$1" port="$2" secs="${3:-30}" i=0
@@ -124,7 +133,7 @@ wait_tcp 127.0.0.1 "${FRP_BIND_PORT:-39000}"
 if [[ -f "${FULLCHAIN}" ]]; then
   info "证书已存在: ${FULLCHAIN}，直接部署全量 HTTPS conf"
   render_full
-  if docker compose -f "${EDGE_DIR}/compose.yaml" ps --status running nginx >/dev/null 2>&1; then
+  if nginx_up; then
     reload_nginx
   else
     start_nginx
@@ -133,7 +142,7 @@ else
   info "未发现证书，进入两阶段：bootstrap → certbot → HTTPS"
   render_bootstrap
   # nginx 已在跑(如证书被删后的重跑)→ reload 应用 bootstrap；否则首启。
-  if docker compose -f "${EDGE_DIR}/compose.yaml" ps --status running nginx >/dev/null 2>&1; then
+  if nginx_up; then
     reload_nginx
   else
     start_nginx
@@ -141,11 +150,14 @@ else
   sleep 2
 
   info "校验 DNS..."
-  if [[ "$(dig +short "${PUBLIC_DOMAIN}" | head -1)" != "${PUBLIC_IP:-}" ]] \
-     && ! ip -4 addr show | grep -qF "$(dig +short "${PUBLIC_DOMAIN}" | head -1)"; then
-    # 允许 PUBLC_IP 显式设置；否则退化为仅提示（部分云 NAT 环境下本机 IP 探测困难）。
-    [[ -n "${PUBLIC_IP:-}" ]] && die "DNS ${PUBLIC_DOMAIN} 未指向 ${PUBLIC_IP}"
-    info "提示：无法确认 DNS 指向本机，certbot 若失败请检查解析与安全组(80)"
+  dns_ip="$(dig +short "${PUBLIC_DOMAIN}" | head -1)"
+  if [[ -n "${PUBLIC_IP:-}" ]]; then
+    # 显式设了公网 IP：解析必须精确命中，无解析/不一致都 die(避免带假域名去 certbot)。
+    [[ "${dns_ip}" == "${PUBLIC_IP}" ]] \
+      || die "DNS ${PUBLIC_DOMAIN} 未指向 ${PUBLIC_IP}(当前: ${dns_ip:-无解析})"
+  elif [[ -n "${dns_ip}" ]] && ! ip -4 addr show | grep -qF "${dns_ip}"; then
+    # 未设 PUBLIC_IP：仅提示(部分云 NAT 下本机 IP 探测困难)。
+    info "提示：域名解析到 ${dns_ip}，非本机网卡地址——确认安全组/负载均衡把 80 转发到本机"
   fi
 
   info "申请证书(webroot)..."
