@@ -33,12 +33,13 @@ case "${MODE}" in
     info "L4 流式聊天..."
     [[ -n "${AUTH}" ]] || die "e2e 需 AUTH=<登录token>"
     out="$(mktemp)"
-    trap 'rm -f "${out}"' RETURN
+    trap 'rm -f "${out}"' EXIT
     start=$(date +%s%N)
-    # -N 关缓冲；记录首字节到文件；统计响应时间
-    curl -N -sS "https://${DOMAIN}/api/chat-process" \
+    # 后台 curl：--max-time 120 兜底；-o 存体；-w 存 HTTP code；-N 关缓冲。
+    curl -sS -N --max-time 120 -o "${out}" -w '%{http_code}' \
+      "https://${DOMAIN}/api/chat-process" \
       -H "Authorization: ${AUTH}" -H 'Content-Type: application/json' \
-      --data '{"prompt":"数到三","options":{}}' > "${out}" &
+      --data '{"prompt":"数到三","options":{}}' > "${out}.code" &
     cpid=$!
     first_byte=0
     while kill -0 "$cpid" 2>/dev/null; do
@@ -47,13 +48,19 @@ case "${MODE}" in
       fi
       sleep 0.05
     done
-    wait "$cpid" || true
+    crc=0; wait "$cpid" || crc=$?
+    code="$(cat "${out}.code" 2>/dev/null || true)"
     end=$(( ($(date +%s%N) - start) / 1000000 ))
-    info "首字节 ${first_byte}ms / 总时长 ${end}ms / 字节 $(wc -c < "${out}")"
-    [[ -s "${out}" ]] || die "e2e 无任何响应体(连接/鉴权/上游失败)"
-    chunks=$(grep -c '^\n' "${out}" || true)
-    [[ "$chunks" -ge 2 ]] || die "chunk 数不足(=$chunks)，疑似代理缓冲聚合"
-    [[ "${first_byte}" -lt 30000 ]] || die "首字节超过 30s，流式不通"
+    rm -f "${out}.code"
+
+    [[ "${crc}" -eq 0 ]] || die "curl 异常退出 ${crc}(28=max-time 超时/连接问题)"
+    [[ "${code}" == "200" ]] || die "e2e HTTP=${code}，要求 200(网关/鉴权/上游错误)"
+    [[ -s "${out}" ]] || die "e2e HTTP 200 但响应体为空"
+    frames="$(stream_frame_count "${out}")" || die "e2e 响应含非 JSON 行(错误页/HTML/错误 JSON)"
+    info "HTTP 200 / 首字节 ${first_byte}ms / 总时长 ${end}ms / 字节 $(wc -c < "${out}") / 帧数 ${frames}"
+    [[ "${frames}" -ge 2 ]] || die "有效帧数(${frames})<2，疑似代理缓冲聚合或单帧错误"
+    [[ "${first_byte}" -lt 30000 ]] || die "首字节 ≥30s，流式不通"
+    [[ "${end}" -lt 120000 ]] || die "总时长 ≥120s"
     ;;
   *) die "用法: smoke-test.sh app|edge|e2e" ;;
 esac

@@ -117,3 +117,31 @@ check_consistency() {
       ;;
   esac
 }
+
+# NDJSON 帧计数：非空 JSON 行数。有 python3 则逐行 json.loads(严格)；否则退化为
+# "以 { 开头且 } 结尾的非空行"结构计数。返回 3 = 内容含非法 JSON(错误页/HTML/错误JSON)。
+stream_frame_count() {
+  local f="$1" n
+  if command -v python3 >/dev/null 2>&1; then
+    n="$(python3 - "$f" <<'PY' 2>/dev/null || true
+import json, sys
+c = 0
+try:
+    with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            s = line.strip()
+            if not s:
+                continue
+            json.loads(s)
+            c += 1
+    print(c)
+except Exception:
+    sys.exit(3)
+PY
+)"
+    [[ -n "$n" ]] || return 3
+  else
+    n="$(grep -cE '^[[:space:]]*\{.*\}[[:space:]]*$' "$f" || true)"
+  fi
+  printf '%s' "$n"
+}
