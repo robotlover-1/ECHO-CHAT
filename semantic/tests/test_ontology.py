@@ -50,3 +50,34 @@ def test_validator_uniqueness_includes_generated():
     from ontology.validator import _generated_keys
     keys = _generated_keys(load())
     assert len(keys) == len(set(keys))
+
+
+from ontology.validator import validate_groups
+
+def _g(cid, group):
+    return {"id": cid, "canonical_zh": "x", "canonical_en": "x",
+            "aliases": ["x"], "group": group}
+
+def test_group_valid():
+    validate_groups([_g("elec_x", "electrical"),
+                     _g("mech_x", "mechanical"),
+                     _g("emb_x", "embedded"),
+                     {"id": "legacy", "canonical_zh": "y", "canonical_en": "y", "aliases": ["y"]}])  # 旧概念无 group 放行
+
+def test_group_illegal_value():
+    with pytest.raises(AssertionError):
+        validate_groups([_g("elec_x", "civil")])
+
+def test_group_prefix_mismatch():
+    with pytest.raises(AssertionError):
+        validate_groups([_g("elec_x", "mechanical")])          # 前缀 vs group 不一致
+    with pytest.raises(AssertionError):
+        validate_groups([{"id": "elec_y", "canonical_zh": "z", "canonical_en": "z", "aliases": ["z"]}])  # 前缀漏 group
+    with pytest.raises(AssertionError):
+        validate_groups([_g("emb_x", "electrical")])           # 前缀 vs group 不一致
+    with pytest.raises(AssertionError):
+        validate_groups([{"id": "mech_y", "canonical_zh": "z", "canonical_en": "z", "aliases": ["z"]}])  # 前缀漏 group
+
+def test_group_unknown_prefix_legacy_ok():
+    # 既有 CS id 无前缀无 group → 放行；带前缀但非领域前缀且无 group → 放行
+    validate_groups([{"id": "red_black_tree", "canonical_zh": "r", "canonical_en": "r", "aliases": ["r"]}])

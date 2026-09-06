@@ -10,6 +10,24 @@ def _generated_keys(data):
             keys.update(folding_variants(a))
     return keys
 
+GROUP_ALLOW = frozenset({"electrical", "mechanical", "embedded"})
+_PREFIX_GROUP = {"elec_": "electrical", "mech_": "mechanical", "emb_": "embedded"}
+
+
+def validate_groups(concepts):
+    """group 标注校验：值须在白名单；带领域前缀 id 须带且匹配对应 group。
+    旧 CS 概念（无前缀无 group）不受影响。违规抛 AssertionError（启动即失败）。"""
+    for c in concepts:
+        cid = c["id"]
+        g = c.get("group")
+        if g is not None and g not in GROUP_ALLOW:
+            raise AssertionError(f"concept {cid}: illegal group {g!r} (∈{sorted(GROUP_ALLOW)})")
+        for prefix, expect in _PREFIX_GROUP.items():
+            if cid.startswith(prefix) and g != expect:
+                raise AssertionError(
+                    f"concept {cid}: prefix {prefix!r} requires group={expect!r}, got {g!r}")
+
+
 def validate():
     data = load()
     ids, owner = set(), {}   # owner: normalized/generated key -> concept id（含原始折叠 + 变体）
@@ -31,3 +49,4 @@ def validate():
                     f"generated key {key!r} (from alias {a!r}) collides across {prev} and {cid}"
                 owner[key] = cid
     assert len(ids) >= 40, "ontology needs >=40 concepts"
+    validate_groups(data["concepts"])
