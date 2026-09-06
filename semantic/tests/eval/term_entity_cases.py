@@ -55,6 +55,11 @@ RECOGNIZE = [
     ("断路器整定电流怎么算", "elec_breaker", None, "domain electrical"),
     ("变频器的载波频率怎么设", "elec_inverter", None, "domain electrical"),
     ("外壳怎么接地", "elec_grounding", None, "domain electrical"),
+    # ---- 领域：mechanical（制造公司机械设计）----
+    ("轴承的游隙怎么选", "mech_bearing", None, "domain mechanical"),
+    ("齿轮的模数怎么确定", "mech_transmission", None, "domain mechanical"),
+    ("这个零件的尺寸公差怎么标", "mech_tolerance", None, "domain mechanical"),
+    ("电机座结构设计", "mech_structure", None, "longest-match 守卫: 含裸'电机'(elec_motor)但'结构设计'更长"),
 ]
 
 # ============================================================= ② MISS 术语识别未命中 ==
@@ -83,6 +88,7 @@ REJECT_PAIRS = [
     ("std::list<int> 怎么遍历", "std::list<string> 怎么遍历"),  # 同实体、模板类型实参不同 → 约束/残差硬拒
     ("std::list 怎么 splice", "实现一个 C++ 链表"),        # splice·API 边界 vs 家族抽象实现 → 异主体硬拒
     ("python list append", "用 python 实现动态数组"),      # list 内建实体(builtin) vs 抽象概念数组 → 异主体硬拒
+    ("接触器怎么选型", "轴承怎么选型"),          # elec_contactor vs mech_bearing → subject 硬拒
 ]
 
 # ============================================================= ④ FP_ELIGIBLE_SAFE 指纹安全 ==
