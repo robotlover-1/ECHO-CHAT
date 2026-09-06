@@ -20,15 +20,17 @@ ECHO-CHAT 是一个**全栈单体服务群**：Go 后端（ai-chat-backend/ai-ch
 
 ```mermaid
 flowchart LR
-    U[公网用户] -->|"https://answermesh.xyz:443"| NG[云 edge 2C2G<br/>Nginx(TLS/限流/流式)]
-    NG -->|"http 127.0.0.1:39001<br/>frps HTTP vhost"| FRPS[frps]
-    FRPS -->|"FRP 隧道(39000/TCP, frps←frpc 主动上行)"| FRPC[frpc]
-    FRPC -->|"http 127.0.0.1:7080"| E[完整 ECHO-CHAT<br/>backend/tokenizer/semantic/kvstore/MySQL...]
-    subgraph 云 [公网云服务器 华东2-上海 2C2G]
-        NG; FRPS
+    U[公网用户] -->|"https://answermesh.xyz:443"| NG["Nginx TLS/限流/流式"]
+    NG -->|"http 127.0.0.1:39001 frps HTTP vhost"| FRPS[frps]
+    FRPS -->|"FRP 隧道 39000/TCP, frpc 主动上行"| FRPC[frpc]
+    FRPC -->|"http 127.0.0.1:7080"| E["完整 ECHO-CHAT"]
+    subgraph cloud["公网云服务器 华东2-上海 2C2G"]
+        NG
+        FRPS
     end
-    subgraph 本 [本地应用节点(无公网IP)]
-        FRPC; E
+    subgraph loc["本地应用节点 无公网IP"]
+        FRPC
+        E
     end
 ```
 
