@@ -35,7 +35,9 @@ for i in $(seq 1 60); do
 done
 
 info "FRP 配置自检（best-effort，P1-4）..."
-if docker run --rm --entrypoint frpc "${FRPC_IMAGE:-snowdreamtech/frpc:0.62.1}" verify -c /app/config.yaml >/dev/null 2>&1; then
+if docker run --rm \
+     -v "${REPO_ROOT}/deploy/app/tunnel/frpc.yaml:/app/config.yaml:ro" \
+     --entrypoint frpc "${FRPC_IMAGE:-snowdreamtech/frpc:0.62.1}" verify -c /app/config.yaml >/dev/null 2>&1; then
   info "frpc verify OK"
 else
   info "frpc verify 不可用（镜像 ENTRYPOINT 不同/无此子命令）——跳过；请在目标机 docker image inspect 后核对 FRPC_IMAGE"

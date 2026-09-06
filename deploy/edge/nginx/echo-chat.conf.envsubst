@@ -11,6 +11,12 @@ server {
         root /var/www/certbot;
     }
 
+    location = /edge-healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
     location / {
         return 301 https://$host$request_uri;
     }
@@ -20,6 +26,12 @@ server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name ${PUBLIC_DOMAIN};
+
+    location = /edge-healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
 
     ssl_certificate     /etc/letsencrypt/live/${PUBLIC_DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${PUBLIC_DOMAIN}/privkey.pem;

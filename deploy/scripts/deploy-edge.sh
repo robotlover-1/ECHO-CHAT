@@ -18,12 +18,21 @@ FRPS_YAML="${EDGE_DIR}/tunnel/frps.yaml"
 
 require_env "${EDGE_ENV}" "${EDGE_DIR}/.env.example"
 info "预检 edge 主机..."
-preflight_host 2048 40960
+preflight_host 1536 20480
 command -v certbot >/dev/null || die "缺少 certbot；先: apt-get install -y certbot"
 command -v dig >/dev/null || die "缺少 dig；先: apt-get install -y dnsutils"
 
 info "渲染 edge 配置..."
 bash "${REPO_ROOT}/deploy/scripts/render-config.sh" edge
+
+info "FRP 服务端配置自检(best-effort，P1-6)..."
+if docker run --rm \
+     -v "${EDGE_DIR}/tunnel/frps.yaml:/app/config.yaml:ro" \
+     --entrypoint frps "${FRPS_IMAGE:-snowdreamtech/frps:0.62.1}" verify -c /app/config.yaml >/dev/null 2>&1; then
+  info "frps verify OK"
+else
+  info "frps verify 不可用（镜像 ENTRYPOINT 不同/无此子命令）——跳过；上线前 docker image inspect 核对"
+fi
 
 CERT_DIR="/etc/letsencrypt/live/${PUBLIC_DOMAIN}"
 FULLCHAIN="${CERT_DIR}/fullchain.pem"
@@ -85,8 +94,32 @@ reload_nginx() {
   die "nginx reload 与 restart 均失败；.prev 已回滚到配置，请人工检查"
 }
 
+# 断言 compose 服务 running：ps -q 非空 且 docker inspect 状态为 running。
+assert_service_running() {
+  local service="$1" cid status
+  cid="$(docker compose -f "${EDGE_DIR}/compose.yaml" ps -q "${service}" 2>/dev/null || true)"
+  [[ -n "${cid}" ]] || die "${service} 容器不存在"
+  status="$(docker inspect -f '{{.State.Status}}' "${cid}" 2>/dev/null || true)"
+  [[ "${status}" == "running" ]] || die "${service} 状态=${status:-未知}(期望 running)"
+}
+
+# 宿主机 TCP 就绪等待（bash /dev/tcp，不依赖镜像工具）。超时默认 30s。
+wait_tcp() {
+  local host="$1" port="$2" secs="${3:-30}" i=0
+  while (( i < secs * 2 )); do
+    if (exec 3<>"/dev/tcp/${host}/${port}") 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.5
+    i=$(( i + 1 ))
+  done
+  die "等待 TCP ${host}:${port} 超时 ${secs}s"
+}
+
 info "启动 frps..."
 start_frps
+assert_service_running frps
+wait_tcp 127.0.0.1 "${FRP_BIND_PORT:-39000}"
 
 if [[ -f "${FULLCHAIN}" ]]; then
   info "证书已存在: ${FULLCHAIN}，直接部署全量 HTTPS conf"
@@ -129,9 +162,21 @@ else
 fi
 
 check_consistency edge
-info "HTTPS 验收..."
-curl -fsS "https://${PUBLIC_DOMAIN}/api/health" >/dev/null \
-  && info "https://${PUBLIC_DOMAIN} 验收通过" \
-  || die "HTTPS 冒烟失败，查 nginx 日志: docker compose -f ${EDGE_DIR}/compose.yaml logs --tail=50 nginx"
+assert_service_running frps
+assert_service_running nginx
+wait_tcp 127.0.0.1 443
+
+info "云端自检: TLS/Nginx(/edge-healthz)..."
+curl -fsS --max-time 15 "https://${PUBLIC_DOMAIN}/edge-healthz" >/dev/null \
+  || die "公网 DNS/TLS/Nginx 自检失败(/edge-healthz)——查 80/443 安全组与 nginx 日志"
+
+info "云端自检: ECHO-CHAT 业务链路(/api/health)..."
+code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${PUBLIC_DOMAIN}/api/health" 2>/dev/null)" || code=000
+case "${code}" in
+  200)            info "ECHO-CHAT 链路已连通，建议再跑 smoke-test.sh edge/e2e" ;;
+  502|503|504)    info "edge 正常(HTTP ${code})；本地 frpc/ECHO-CHAT 未就绪——frpc 上线后再跑 smoke-test.sh edge" ;;
+  000)            die "HTTPS 连接失败(000)";;
+  *)              die "HTTPS 返回非预期状态 ${code}，检查 Nginx 路由/后端" ;;
+esac
 
 info "续期 deploy hook 建议写入 /etc/letsencrypt/renewal-hooks/deploy/reload-echo-nginx.sh（见 deploy/README.md）"
