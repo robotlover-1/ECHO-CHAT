@@ -103,6 +103,18 @@
     {"id": "mech_transmission", "canonical_zh": "传动", "canonical_en": "transmission", "aliases": ["传动", "传动比", "皮带传动", "链传动", "齿轮", "transmission", "gear"], "group": "mechanical"},
     {"id": "mech_material", "canonical_zh": "材料选用", "canonical_en": "material selection", "aliases": ["材料选型", "材料选用", "选材", "material selection"], "group": "mechanical"},
     {"id": "mech_sheet_metal", "canonical_zh": "钣金", "canonical_en": "sheet metal", "aliases": ["钣金", "钣金件", "sheet metal"], "group": "mechanical"},
-    {"id": "mech_shaft", "canonical_zh": "转轴", "canonical_en": "shaft", "aliases": ["转轴", "传动轴", "输出轴", "shaft"], "group": "mechanical"}
+    {"id": "mech_shaft", "canonical_zh": "转轴", "canonical_en": "shaft", "aliases": ["转轴", "传动轴", "输出轴", "shaft"], "group": "mechanical"},
+    {"id": "emb_mcu", "canonical_zh": "单片机", "canonical_en": "microcontroller", "aliases": ["单片机", "mcu", "微控制器", "stm32"], "group": "embedded"},
+    {"id": "emb_rtos", "canonical_zh": "实时操作系统", "canonical_en": "real-time operating system", "aliases": ["rtos", "freertos", "rt-thread", "实时操作系统", "实时系统"], "group": "embedded"},
+    {"id": "emb_firmware", "canonical_zh": "固件", "canonical_en": "firmware", "aliases": ["固件", "固件开发", "固件升级", "firmware"], "group": "embedded"},
+    {"id": "emb_driver", "canonical_zh": "驱动开发", "canonical_en": "device driver", "aliases": ["驱动开发", "设备驱动", "驱动程序", "device driver"], "group": "embedded"},
+    {"id": "emb_interrupt", "canonical_zh": "中断", "canonical_en": "interrupt", "aliases": ["中断", "中断服务函数", "中断处理", "中断嵌套", "interrupt", "isr"], "group": "embedded"},
+    {"id": "emb_timer", "canonical_zh": "定时器", "canonical_en": "timer", "aliases": ["定时器", "定时器中断", "timer"], "group": "embedded"},
+    {"id": "emb_serial", "canonical_zh": "串口", "canonical_en": "serial communication", "aliases": ["串口", "uart", "rs232", "串口通信", "serial"], "group": "embedded"},
+    {"id": "emb_i2c", "canonical_zh": "I2C", "canonical_en": "i2c bus", "aliases": ["i2c", "iic"], "group": "embedded"},
+    {"id": "emb_spi", "canonical_zh": "SPI", "canonical_en": "spi bus", "aliases": ["spi"], "group": "embedded"},
+    {"id": "emb_can", "canonical_zh": "CAN总线", "canonical_en": "can bus", "aliases": ["can", "can总线", "can通信", "can bus"], "group": "embedded"},
+    {"id": "emb_watchdog", "canonical_zh": "看门狗", "canonical_en": "watchdog", "aliases": ["看门狗", "watchdog"], "group": "embedded"},
+    {"id": "emb_bootloader", "canonical_zh": "引导程序", "canonical_en": "bootloader", "aliases": ["bootloader", "引导程序", "启动流程"], "group": "embedded"}
   ]
 }

@@ -60,6 +60,11 @@ RECOGNIZE = [
     ("齿轮的模数怎么确定", "mech_transmission", None, "domain mechanical"),
     ("这个零件的尺寸公差怎么标", "mech_tolerance", None, "domain mechanical"),
     ("电机座结构设计", "mech_structure", None, "longest-match 守卫: 含裸'电机'(elec_motor)但'结构设计'更长"),
+    # ---- 领域：embedded（嵌入式软件工程师）----
+    ("FreeRTOS 任务优先级怎么调", "emb_rtos", None, "domain embedded"),
+    ("中断嵌套怎么处理", "emb_interrupt", None, "domain embedded"),
+    ("CAN 总线波特率怎么配", "emb_can", None, "domain embedded"),
+    ("看门狗溢出时间怎么设置", "emb_watchdog", None, "domain embedded"),
 ]
 
 # ============================================================= ② MISS 术语识别未命中 ==
@@ -89,6 +94,8 @@ REJECT_PAIRS = [
     ("std::list 怎么 splice", "实现一个 C++ 链表"),        # splice·API 边界 vs 家族抽象实现 → 异主体硬拒
     ("python list append", "用 python 实现动态数组"),      # list 内建实体(builtin) vs 抽象概念数组 → 异主体硬拒
     ("接触器怎么选型", "轴承怎么选型"),          # elec_contactor vs mech_bearing → subject 硬拒
+    ("FreeRTOS 任务优先级怎么调", "中断嵌套怎么处理"),   # 同域不同主题(emb_rtos vs emb_interrupt) → 硬拒
+    ("红黑树的插入复杂度", "接触器选型额定电流"),          # 既有 CS(red_black_tree) vs 新域(elec_contactor) → 硬拒
 ]
 
 # ============================================================= ④ FP_ELIGIBLE_SAFE 指纹安全 ==
@@ -103,6 +110,7 @@ FP_ELIGIBLE_SAFE = [
     ("用 C++ 写一个 list", False),       # library_type 实体 → 不进指纹（只向量+decision）
     ("std::list<int>", False),          # type_args 模板 → 不进指纹
     ("什么是接触器", True),
+    ("什么是中断", True),
 ]
 
 # ============================================== 摘要 ============
