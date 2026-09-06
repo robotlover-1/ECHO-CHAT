@@ -52,7 +52,7 @@ ECHO-CHAT 是制造业公司内部的问答助手：电气/机械设计工程师
 ### mechanical（group=mechanical）
 | id（canonical_zh） | 别名（起手） |
 |---|---|
-| mech_structure（结构件） | 结构件, 结构设计, 机械结构, 结构 ⚠裸"结构"可能误吸，观察后删 |
+| mech_structure（结构件） | 结构件, 结构设计, 机械结构 ~~结构~~（评审修订：裸"结构"误吸"数据结构/结构体"→ 已删） |
 | mech_modeling（三维建模） | 三维建模, 3d建模, 三维模型, 3d模型 |
 | mech_drawing（工程图） | 工程图, 出图, 二维图, 图纸, engineering drawing ⚠"图纸"可出现在电气句，靠最长匹配归此 |
 | mech_tolerance（公差） | 公差, 尺寸公差, 形位公差, 公差配合, tolerance |
@@ -75,11 +75,18 @@ ECHO-CHAT 是制造业公司内部的问答助手：电气/机械设计工程师
 | emb_serial（串口） | 串口, uart, rs232, 串口通信, serial ⚠rs485 是否并入待定 |
 | emb_i2c（I2C） | i2c, iic |
 | emb_spi（SPI） | spi |
-| emb_can（CAN 总线） | can, can总线, can通信, can bus |
+| emb_can（CAN 总线） | ~~can~~, can总线, can 总线, can通信, can bus（评审修订：裸"can"误吸英文泛句 how can I… → 删，补 spaced 形式保 "CAN 总线"） |
 | emb_watchdog（看门狗） | 看门狗, watchdog |
 | emb_bootloader（引导程序） | bootloader, 引导程序, 启动流程 |
 
 > 上表为设计批准的首期内容。落码时逐条核对与既有 40 概念的别名唯一性（validator 会兜底）；对 ⚠ 取舍点在实现 PR 里保持与表一致，不作为隐含变更。
+
+## 落地评审修订（2026-09-06，实现后）
+
+final-review 前后复盘发现的**裸别名误吸**已修订（对既往未识别泛句的影响，见对话复盘）：
+- `mech_structure` 删裸别名 `结构`（会误吸 CS 高频「数据结构/结构体」）；`emb_can` 删裸别名 `can`（会误吸英文泛句 `how can I…`），补 spaced 别名 `can 总线` 保 "CAN 总线" 空格写法仍识别；
+- `term_entity_cases.py` MISS 增 3 条守卫行：`数据结构怎么学`、`C语言结构体怎么定义`、`how can I debug` → subject None（subject_unresolved）；
+- 全量 114 passed，行为与最长匹配/decision 机制不变。
 
 ## 工程改动
 
