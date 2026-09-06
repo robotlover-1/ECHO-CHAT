@@ -202,11 +202,11 @@ MISS 列表（段 ②）末尾追加 3 行（通用未建档短语冻结，reaso
     ("这个按钮按了没反应", "subject_unresolved"),
 ```
 
-FP_ELIGIBLE_SAFE 列表（段 ④）末尾追加 2 行（实测 `intent=definition`、残差空 → eligible True，概念直命安全）：
+FP_ELIGIBLE_SAFE 列表（段 ④）末尾追加 1 行（实测 `intent=definition`、残差空 → eligible True，概念直命安全）：
 ```python
     ("什么是接触器", True),
-    ("什么是中断", True),
 ```
+> 「什么是中断」的 FP 行**不在本任务**——`emb_interrupt` 概念于 Task 5 才加入，此阶段无该概念 → 必 False。该 FP 行随 emb 概念在 Task 5 Step 1 一并追加（见 Task 5）。
 
 - [ ] **Step 2: 跑测试确认失败**
 
@@ -331,6 +331,11 @@ REJECT_PAIRS 列表末尾追加 2 行（域内不同主题 + 新概念 vs 既有
 ```python
     ("FreeRTOS 任务优先级怎么调", "中断嵌套怎么处理"),   # 同域不同主题(emb_rtos vs emb_interrupt) → 硬拒
     ("红黑树的插入复杂度", "接触器选型额定电流"),          # 既有 CS(red_black_tree) vs 新域(elec_contactor) → 硬拒
+```
+
+FP_ELIGIBLE_SAFE 列表（段 ④）末尾追加 1 行——`emb_interrupt` 现已存在，实测 `intent=definition`、残差空 → eligible True（从 Task 3 挪入，见 Task 3 注）：
+```python
+    ("什么是中断", True),
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
