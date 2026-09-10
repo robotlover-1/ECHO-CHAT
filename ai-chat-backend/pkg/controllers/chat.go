@@ -13,7 +13,6 @@ import (
 	ai_chat_service_proto "ai-chat-backend/services/ai-chat-service/proto"
 
 	"ai-chat-backend/pkg/tokenizer"
-	"ai-chat-backend/pkg/users"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -79,14 +78,7 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 		return
 	}
 
-	deviceID, _ := ctx.Get("device_id")
-	if chat.config.Auth.Enabled {
-		user, err := users.GetByDeviceID(deviceID.(string))
-		if err != nil || user == nil || user.Quota <= 0 {
-			ctx.JSON(402, gin.H{"status": "Fail", "message": "额度不足，请充值后再试", "data": nil})
-			return
-		}
-	}
+	// 不做额度校验：登录（AuthMiddleware）仍生效以取得 device_id，但对话不限额度。
 
 	messageID := uuid.New().String()
 
@@ -144,22 +136,15 @@ func (chat *ChatService) ChatProcess(ctx *gin.Context) {
 			respMsg := openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: result.Text}
 			pt, err1 := tokenizer.GetTokenCount(promptMsg, chat.config.Chat.Model)
 			rt, err2 := tokenizer.GetTokenCount(respMsg, chat.config.Chat.Model)
+			// 只统计用量用于前端展示，不再扣减额度（额度限制已移除）。
 			if err1 == nil && err2 == nil {
 				if result.Source == "cache" {
 					result.TokensSaved = pt + rt
 				} else {
 					result.TokensUsed = pt + rt
 				}
-				if chat.config.Auth.Enabled {
-					dv, _ := ctx.Get("device_id")
-					if id, ok := dv.(string); ok && result.Source != "cache" {
-						if err := users.DeductQuota(id, pt+rt); err != nil {
-							chat.log.Error(err)
-						}
-					}
-				}
 			} else {
-				chat.log.ErrorF("计费 token 统计失败: %v / %v", err1, err2)
+				chat.log.ErrorF("token 统计失败: %v / %v", err1, err2)
 			}
 			// 末包：把 source 与 tokens 统计带给前端
 			bts, err := json.Marshal(result)

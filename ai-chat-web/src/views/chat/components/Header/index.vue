@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { computed, nextTick } from 'vue'
 import { HoverButton, SvgIcon } from '@/components/common'
-import { useAppStore, useAuthStore, useChatStore } from '@/store'
+import { useAppStore, useChatStore } from '@/store'
 
 interface Props {
   usingContext: boolean
@@ -17,7 +17,6 @@ defineProps<Props>()
 const emit = defineEmits<Emit>()
 
 const appStore = useAppStore()
-const authStore = useAuthStore()
 const chatStore = useChatStore()
 
 const collapsed = computed(() => appStore.siderCollapsed)
@@ -68,12 +67,7 @@ function toggleUsingContext() {
         {{ currentChatHistory?.title ?? '' }}
       </h1>
       <div class="flex items-center space-x-2">
-        <span
-          v-if="authStore.session?.quota !== undefined"
-          class="text-xs whitespace-nowrap text-[#4f555e] dark:text-white"
-        >
-          额度 {{ authStore.session?.quota }}
-        </span>
+        <!-- 额度限制已移除，不再展示余额 -->
         <HoverButton @click="toggleTheme">
           <span class="text-xl text-[#4f555e] dark:text-white">
             <SvgIcon :icon="theme === 'dark' ? 'ri:sun-line' : 'ri:moon-line'" />

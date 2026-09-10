@@ -591,9 +591,9 @@ onUnmounted(() => {
 .streaming-msg .markdown-body::after {
   content: '▍';
   margin-left: 2px;
-  animation: echochat-blink 1s step-start infinite;
+  animation: answermesh-blink 1s step-start infinite;
 }
-@keyframes echochat-blink {
+@keyframes answermesh-blink {
   50% { opacity: 0; }
 }
 </style>
