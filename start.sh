@@ -132,6 +132,59 @@ fi
 
 echo "== 启动服务 =="
 
+# ---- frpc 公网隧道（可选；配置/二进制缺失则跳过，不影响本地 9 个服务）----
+PUBLIC_DOMAIN=""
+ensure_frpc() {
+  local i rc out
+  if [ ! -f "$FRPC_ENV" ]; then
+    echo "  [$FRPC_NAME] ⚠ 跳过：未找到 $FRPC_ENV"
+    echo "    启用公网入口：cp deploy/app/.env.example deploy/app/.env 并填 PUBLIC_DOMAIN/FRP_SERVER_ADDR/FRP_AUTH_TOKEN"
+    return 2
+  fi
+  if [ ! -x "$FRPC_BIN" ]; then
+    echo "  [$FRPC_NAME] ⚠ 跳过：未找到 $FRPC_BIN"
+    echo "    获取 frp 0.62.1 客户端（须与云端 frps 同版本），见 docs/echo-chat-frp-nat-traversal.md"
+    return 2
+  fi
+
+  # 复用 deploy/scripts/lib.sh 的 .env 解析与受限渲染（与 deploy-app.sh 同一套，含残留变量守卫）
+  echo "  [$FRPC_NAME] 渲染配置 ..."
+  if ! out="$(bash -c '
+        set -euo pipefail
+        source "$1"
+        require_env "$2" "$3"
+        render_restricted "$4" "$5" "\${FRP_SERVER_ADDR} \${FRP_BIND_PORT} \${FRP_AUTH_TOKEN} \${PUBLIC_DOMAIN}"
+      ' _ "$BASE/deploy/scripts/lib.sh" "$FRPC_ENV" "$FRPC_ENV.example" \
+        "$FRPC_TEMPLATE" "$FRPC_CONFIG" 2>&1)"; then
+    echo "  [$FRPC_NAME] ✘ 配置渲染失败:"
+    printf '%s\n' "$out" | sed 's/^/    /'
+    return 1
+  fi
+  PUBLIC_DOMAIN="$(grep -A1 'customDomains:' "$FRPC_CONFIG" | grep -oE '"[^"]+"' | tr -d '"' | head -1)"
+
+  if frpc_registered; then
+    echo "  [$FRPC_NAME] ✔ already running (隧道已建立 → $PUBLIC_DOMAIN)"
+    return 0
+  fi
+
+  echo "  [$FRPC_NAME] starting ..."
+  # exec 不可省：没有它，`( cd X && cmd & )` 的子 shell 会自己留一层进程，
+  # $! 记到的是这个转瞬即逝的中间 shell 而非 frpc（stop.sh 便会 TERM 到死 pid）。
+  # exec 让 frpc 顶替子 shell，$! 即 frpc 本尊，且中间层消失不会拖住 start.sh。
+  _frpc_pf="$(pidfile "$FRPC_NAME")"
+  ( cd "$BASE" && exec nohup "$FRPC_BIN" -c "$FRPC_CONFIG" >>"$(logfile "$FRPC_NAME")" 2>&1 </dev/null & echo $! > "$_frpc_pf" )
+  for i in $(seq 1 20); do
+    if frpc_registered; then
+      echo "  [$FRPC_NAME] ✔ 已登录 frps，公网入口就绪 → https://$PUBLIC_DOMAIN"
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "  [$FRPC_NAME] ✘ 未连上 frps（核对 token / FRP_SERVER_ADDR / 两端版本）, 日志尾部:"
+  tail -n 5 "$(logfile "$FRPC_NAME")" 2>/dev/null | sed 's/^/    /'
+  return 1
+}
+
 start_one() {
   local name="$1" port="$2" cwd="$3" cmd="$4" i
   if port_listening "$port"; then
@@ -149,16 +202,26 @@ start_one() {
   return 1
 }
 
-total=0; ok=0; failed=()
+total=0; ok=0; failed=(); frpc_state=""
 for entry in "${SERVICES[@]}"; do
   IFS='|' read -r name port cwd cmd <<< "$entry"
   total=$((total+1))
   if start_one "$name" "$port" "$cwd" "$cmd"; then ok=$((ok+1)); else failed+=("$name"); fi
 done
 
+# frpc 隧道在本地服务就绪后再起：它反代 7080，后端没起来隧道通了也没意义。
+# 不计入本地服务的 total/ok：它没监听端口，混在一起会让 "N/N 服务就绪" 失去意义。
+if ensure_frpc; then frpc_state="up"; else
+  [ $? -eq 2 ] && frpc_state="skip" || { frpc_state="fail"; failed+=("$FRPC_NAME"); }
+fi
+
 echo
 if [ ${#failed[@]} -eq 0 ]; then
   echo "✔ $ok/$total 服务就绪 → http://localhost:7080"
+  case "$frpc_state" in
+    up)   echo "  公网入口 → https://$PUBLIC_DOMAIN（frpc 隧道已建立）" ;;
+    skip) echo "  公网入口未启用（本机访问不受影响）" ;;
+  esac
 else
   echo "✘ ${#failed[@]} 个失败: ${failed[*]}; 日志在 runtime/logs/, 用 ./stop.sh 清理后重试"
   exit 1

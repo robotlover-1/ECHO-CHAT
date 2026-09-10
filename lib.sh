@@ -21,6 +21,15 @@ SERVICES=(
   "backend|7080|$BASE/ai-chat-backend|$BASE/bin/ai-chat-backend --config=dev.config.yaml"
 )
 
+# frpc 公网隧道：不在 SERVICES 里（它不监听本地端口，无端口可探活），
+# 由 start.sh 的 ensure_frpc / stop.sh 单独处理。
+FRPC_NAME="frpc"
+FRPC_BIN="$BASE/bin/frpc"
+FRPC_ENV="$BASE/deploy/app/.env"
+FRPC_TEMPLATE="$BASE/deploy/app/tunnel/frpc.yaml.envsubst"
+FRPC_CONFIG="$BASE/deploy/app/tunnel/frpc.yaml"
+FRPC_PUBLIC_PORT=39000          # 云端 frps 控制口，用于探测隧道是否已建立
+
 SERVICE_NAMES="$(for e in "${SERVICES[@]}"; do echo "${e%%|*}"; done | tr '\n' ' ')"
 
 logfile() { echo "$LOG_DIR/$1.log"; }
@@ -35,4 +44,11 @@ port_listening() {
 pid_alive() {
   local pid="$1"
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+# 隧道是否已建立：frpc 到云端 frps 控制口的 TCP 连接处于 ESTABLISHED。
+# frpc 无本地监听端口，只能这样探活（进程存在 ≠ 已登录成功）。
+frpc_registered() {
+  ss -tn state established 2>/dev/null \
+    | awk '{print $4}' | grep -qE "[:.]${FRPC_PUBLIC_PORT}$"
 }

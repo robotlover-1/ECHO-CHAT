@@ -11,6 +11,7 @@ collect_targets() {
       IFS='|' read -r name port cwd cmd <<< "$entry"
       TARGETS+=("$name|$port")
     done
+    TARGETS+=("$FRPC_NAME|0")   # 最后加入 → 逆序停止时第一个停（先切公网入口再停后端）
     return
   fi
   for arg in "$@"; do
@@ -21,13 +22,31 @@ collect_targets() {
         TARGETS+=("$name|$port"); found=1; break
       fi
     done
-    if [ $found -eq 0 ]; then echo "警告: 未知服务/端口 '$arg' (可用: $SERVICE_NAMES)"; fi
+    # frpc 不在 SERVICES 里（无监听端口），单独识别
+    if [ $found -eq 0 ] && [ "$arg" = "$FRPC_NAME" ]; then
+      TARGETS+=("$FRPC_NAME|0"); found=1
+    fi
+    if [ $found -eq 0 ]; then echo "警告: 未知服务/端口 '$arg' (可用: $SERVICE_NAMES$FRPC_NAME)"; fi
   done
 }
 
 stop_one() {
   local name="$1" port="$2" pf pid i
   pf="$(pidfile "$name")"
+  # frpc 无本地监听端口，port_listening 探不到，走 pidfile + 进程名回退
+  if [ "$name" = "$FRPC_NAME" ]; then
+    if [ -f "$pf" ] && pid_alive "$(cat "$pf")"; then
+      kill -TERM "$(cat "$pf")"
+      echo "  [$name] TERM 已发送"
+    elif pgrep -x "$FRPC_NAME" >/dev/null 2>&1; then
+      pkill -TERM -x "$FRPC_NAME"
+      echo "  [$name] pkill 回退停止"
+    else
+      echo "  [$name] 未运行"
+      rm -f "$pf"
+    fi
+    return
+  fi
   if [ -f "$pf" ] && pid_alive "$(cat "$pf")"; then
     pid="$(cat "$pf")"
     kill -TERM "$pid"
