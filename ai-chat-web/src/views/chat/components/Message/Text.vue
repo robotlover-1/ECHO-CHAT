@@ -21,15 +21,16 @@ const { isMobile } = useBasicLayout()
 
 const textRef = ref<HTMLElement>()
 
-const mdi = new MarkdownIt({
+// 显式标注类型：highlight 回调里引用了 mdi 自身（escapeHtml），否则 TS 无法推导（TS7022）。
+const mdi: MarkdownIt = new MarkdownIt({
   linkify: true,
   highlight(code, language) {
-    const validLang = !!(language && hljs.getLanguage(language))
-    if (validLang) {
-      const lang = language ?? ''
-      return highlightBlock(hljs.highlight(code, { language: lang }).value, lang)
-    }
-    return highlightBlock(hljs.highlightAuto(code).value, '')
+    // 流式下本函数会对「不断增长的全量代码块」反复调用，highlightAuto 每次都要试遍
+    // 全部语言语法（实测单帧可达 400ms+，是流式卡顿的主因）。故只做显式语言高亮：
+    // 无标注或未知语言时按纯文本转义，交给 markdown-it 的正常 escape 路径。
+    if (language && hljs.getLanguage(language))
+      return highlightBlock(hljs.highlight(code, { language }).value, language)
+    return highlightBlock(mdi.utils.escapeHtml(code), '')
   },
 })
 

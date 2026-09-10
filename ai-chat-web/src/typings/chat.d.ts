@@ -45,5 +45,10 @@ declare namespace Chat {
 		parentMessageId: string
 		role: string
 		text: string
+		// 后端 ChatMessage 实际下发（见 ai-chat-backend/pkg/controllers/chat.go）：
+		// source 区分 cache/llm，tokens 用于前端展示用量。此前靠 JSON.parse 的 any 绕过检查。
+		source?: string
+		tokensUsed?: number
+		tokensSaved?: number
 	}
 }

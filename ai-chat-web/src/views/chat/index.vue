@@ -15,6 +15,8 @@ import { HoverButton, SvgIcon } from '@/components/common'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAuthStore, useChatStore, usePromptStore } from '@/store'
 import { fetchChatAPIProcess, fetchDeviceLogin } from '@/api'
+import { throttleLast } from '@/utils/functions/throttle'
+import { createNdjsonReader } from '@/utils/functions/ndjson'
 import { t } from '@/locales'
 
 let controller = new AbortController()
@@ -118,52 +120,42 @@ async function onConversation() {
 
   try {
     let lastText = ''
+    // 流式节流：后端每帧发累积全文，逐帧全量 markdown 重渲染是 O(n²)（见 utils/functions/throttle.ts）。
+    // 负载在此处即时组装（text 用当下的 lastText），节流只推迟 DOM 更新与滚动，
+    // 故重试分支改写 lastText 后，挂起的那一帧仍是正确文本、不会重复拼接。
+    const renderStream = throttleLast((chat: Chat.Chat) => {
+      updateChat(+uuid, dataSources.value.length - 1, chat)
+      scrollToBottomIfAtBottom()
+    })
     const fetchChatAPIOnce = async (retried = false): Promise<void> => {
+      // 每个请求一个 reader（重试时重置偏移），只认完整帧，见 utils/functions/ndjson.ts
+      const readStream = createNdjsonReader<Chat.ConversationResponse>((data) => {
+        renderStream({
+          dateTime: new Date().toLocaleString(),
+          text: lastText + data.text ?? '',
+          inversion: false,
+          error: false,
+          loading: false,
+          conversationOptions: { conversationId: data.conversationId, parentMessageId: data.id },
+          requestOptions: { prompt: message, options: { ...options } },
+          source: data.source,
+          tokensUsed: data.tokensUsed,
+          tokensSaved: data.tokensSaved,
+        })
+
+        if (openLongReply && data.detail.choices[0].finish_reason === 'length') {
+          options.parentMessageId = data.id
+          lastText = data.text
+          message = ''
+          return fetchChatAPIOnce()
+        }
+      })
       try {
       await fetchChatAPIProcess<Chat.ConversationResponse>({
         prompt: message,
         options,
         signal: controller.signal,
-        onDownloadProgress: ({ event }) => {
-          const xhr = event.target
-          const { responseText } = xhr
-          // Always process the final line
-          const lastIndex = responseText.lastIndexOf('\n', responseText.length - 2)
-          let chunk = responseText
-          if (lastIndex !== -1)
-            chunk = responseText.substring(lastIndex)
-          try {
-            const data = JSON.parse(chunk)
-            updateChat(
-              +uuid,
-              dataSources.value.length - 1,
-              {
-                dateTime: new Date().toLocaleString(),
-                text: lastText + data.text ?? '',
-                inversion: false,
-                error: false,
-                loading: false,
-                conversationOptions: { conversationId: data.conversationId, parentMessageId: data.id },
-                requestOptions: { prompt: message, options: { ...options } },
-                source: data.source,
-                tokensUsed: data.tokensUsed,
-                tokensSaved: data.tokensSaved,
-              },
-            )
-
-            if (openLongReply && data.detail.choices[0].finish_reason === 'length') {
-              options.parentMessageId = data.id
-              lastText = data.text
-              message = ''
-              return fetchChatAPIOnce()
-            }
-
-            scrollToBottomIfAtBottom()
-          }
-          catch (error) {
-          //
-          }
-        },
+        onDownloadProgress: ({ event }) => readStream(event.target.responseText),
       })
       } catch (e: any) {
         // 会话失效（kvstore 重启）：自动重登后重试一次，避免第一条消息被吞
@@ -177,6 +169,7 @@ async function onConversation() {
     }
 
     await fetchChatAPIOnce()
+    renderStream.flush()   // 提交最后一帧，避免节流窗口内丢尾部内容
     authStore.getSession().catch(() => {})   // 刷新余额
   }
   catch (error: any) {
@@ -262,50 +255,39 @@ async function onRegenerate(index: number) {
 
   try {
     let lastText = ''
+    // 节流同 onSend：见 utils/functions/throttle.ts
+    const renderStream = throttleLast((chat: Chat.Chat) => {
+      updateChat(+uuid, index, chat)
+    })
     const fetchChatAPIOnce = async (retried = false): Promise<void> => {
+      // 每个请求一个 reader（重试时重置偏移），只认完整帧，见 utils/functions/ndjson.ts
+      const readStream = createNdjsonReader<Chat.ConversationResponse>((data) => {
+        renderStream({
+          dateTime: new Date().toLocaleString(),
+          text: lastText + data.text ?? '',
+          inversion: false,
+          error: false,
+          loading: false,
+          conversationOptions: { conversationId: data.conversationId, parentMessageId: data.id },
+          requestOptions: { prompt: message, ...options },
+          source: data.source,
+          tokensUsed: data.tokensUsed,
+          tokensSaved: data.tokensSaved,
+        })
+
+        if (openLongReply && data.detail.choices[0].finish_reason === 'length') {
+          options.parentMessageId = data.id
+          lastText = data.text
+          message = ''
+          return fetchChatAPIOnce()
+        }
+      })
       try {
       await fetchChatAPIProcess<Chat.ConversationResponse>({
         prompt: message,
         options,
         signal: controller.signal,
-        onDownloadProgress: ({ event }) => {
-          const xhr = event.target
-          const { responseText } = xhr
-          // Always process the final line
-          const lastIndex = responseText.lastIndexOf('\n', responseText.length - 2)
-          let chunk = responseText
-          if (lastIndex !== -1)
-            chunk = responseText.substring(lastIndex)
-          try {
-            const data = JSON.parse(chunk)
-            updateChat(
-              +uuid,
-              index,
-              {
-                dateTime: new Date().toLocaleString(),
-                text: lastText + data.text ?? '',
-                inversion: false,
-                error: false,
-                loading: false,
-                conversationOptions: { conversationId: data.conversationId, parentMessageId: data.id },
-                requestOptions: { prompt: message, ...options },
-                source: data.source,
-                tokensUsed: data.tokensUsed,
-                tokensSaved: data.tokensSaved,
-              },
-            )
-
-            if (openLongReply && data.detail.choices[0].finish_reason === 'length') {
-              options.parentMessageId = data.id
-              lastText = data.text
-              message = ''
-              return fetchChatAPIOnce()
-            }
-          }
-          catch (error) {
-            //
-          }
-        },
+        onDownloadProgress: ({ event }) => readStream(event.target.responseText),
       })
       } catch (e: any) {
         // 会话失效（kvstore 重启）：自动重登后重试一次，避免第一条消息被吞
@@ -318,6 +300,7 @@ async function onRegenerate(index: number) {
       }
     }
     await fetchChatAPIOnce()
+    renderStream.flush()   // 提交最后一帧
     authStore.getSession().catch(() => {})   // 刷新余额
   }
   catch (error: any) {
