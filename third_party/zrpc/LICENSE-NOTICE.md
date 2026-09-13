@@ -49,7 +49,12 @@
   1. **补齐 3 处缺失的 `return`**（真实缺陷，非风格问题）：`nty_schedule_create()`、`nty_epoller_ev_register_trigger()`、
      `init_hook()` 都声明为 `int` 却从函数末尾掉出——C11 6.9.1p12 是 UB（返回值取自返回寄存器，未定义）。
      上游不开 `-Wall` 故从未暴露；三个调用点目前均忽略返回值，所以**此前无实际故障表现**。
-     同源的 `kvstore` 子模块 NtyCo 副本已同步修好。
+     **只改了本目录 `ntyco/`**。`kvstore` 子模块里那份 NtyCo 有完全相同的 3 处漏 return
+     （两份逐字节一致），但它是 `wangbojing/NtyCo` 的**上游 submodule**——pocket-kv 的 `.gitmodules`
+     将该路径指向该第三方仓库并 pin 在 `v1.0.4-55-g72ab5fd`，并非 pocket-kv 自有代码，本仓库无法就地提交修复。
+     **决定不动它**：pocket-kv 编译 NtyCo 用 `FLAG = -lpthread -O3 -ldl`（不带 `-Wall`），
+     那 3 处连警告都不会出现；且其全部调用点（`nty_schedule.c:220` 与 `nty_socket.c:362,387,412,439,467,502,537,566,612`）
+     同样忽略返回值，与 zrpc 侧一样无实际故障表现。待上游修，或日后若 pocket-kv 改为 vendored 该源码再一并处理。
   2. **`Makefile` 为 ntyco 对象单独加 `-Wno-sign-compare -Wno-unused-variable -Wno-unused-function`**：
      压制的是上游风格噪音（int 计数器 vs size_t 长度、遗留 `co` 变量、死函数 `nty_epollevent_2poll`）。
      **`-Wreturn-type` 特意不压制**，以便继续兜住上游同类新缺陷——正是它抓出了上面那 3 处。
