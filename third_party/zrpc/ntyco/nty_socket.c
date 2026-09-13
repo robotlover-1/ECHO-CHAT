@@ -353,6 +353,8 @@ int init_hook(void) {
 	close_f = (close_t)dlsym(RTLD_NEXT, "close");
 	connect_f = (connect_t)dlsym(RTLD_NEXT, "connect");
 
+	/* [本项目补写] 上游漏 return：声明为 int 却从末尾掉出。见 LICENSE-NOTICE.md §4。 */
+	return 0;
 }
 
 

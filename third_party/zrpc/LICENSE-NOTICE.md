@@ -45,6 +45,14 @@
   该伪报已用保护页验证：给共享栈顶页设 PROT_NONE 后跑 10 万次 unary（每次 yield 都 `_save_stack`
   复制到栈顶），全程无段错误，证实并非真实越界；内存健康改由 load 的 fd/RSS canary + 该守卫页实验覆盖。
 - 已知边界：跨线程关闭 fd 无法即时唤醒 NtyCo 调度线程（优雅停机推迟到 Task 8 处理）。
+- **与上游的差异（2026-09-13）**：`ntyco/` 只做了两类改动，均以 `[本项目补写]` 注释标记，便于日后同步上游时比对。
+  1. **补齐 3 处缺失的 `return`**（真实缺陷，非风格问题）：`nty_schedule_create()`、`nty_epoller_ev_register_trigger()`、
+     `init_hook()` 都声明为 `int` 却从函数末尾掉出——C11 6.9.1p12 是 UB（返回值取自返回寄存器，未定义）。
+     上游不开 `-Wall` 故从未暴露；三个调用点目前均忽略返回值，所以**此前无实际故障表现**。
+     同源的 `kvstore` 子模块 NtyCo 副本已同步修好。
+  2. **`Makefile` 为 ntyco 对象单独加 `-Wno-sign-compare -Wno-unused-variable -Wno-unused-function`**：
+     压制的是上游风格噪音（int 计数器 vs size_t 长度、遗留 `co` 变量、死函数 `nty_epollevent_2poll`）。
+     **`-Wreturn-type` 特意不压制**，以便继续兜住上游同类新缺陷——正是它抓出了上面那 3 处。
 
 ## 5. 授权记录
 

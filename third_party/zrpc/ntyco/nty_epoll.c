@@ -70,6 +70,9 @@ int nty_epoller_ev_register_trigger(void) {
 	int ret = epoll_ctl(sched->poller_fd, EPOLL_CTL_ADD, sched->eventfd, &ev);
 
 	assert(ret != -1);
+
+	/* [本项目补写] 上游漏 return：声明为 int 却从末尾掉出。见 LICENSE-NOTICE.md §4。 */
+	return 0;
 }
 
 

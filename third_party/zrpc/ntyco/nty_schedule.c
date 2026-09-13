@@ -242,6 +242,9 @@ int nty_schedule_create(int stack_size) {
 	TAILQ_INIT(&sched->defer);
 	LIST_INIT(&sched->busy);
 
+	/* [本项目补写] 上游漏 return：函数声明为 int 却从末尾掉出（C11 6.9.1p12 UB）。
+	 * 现调用方均忽略返回值，故无实际故障，但 -Wall 报 -Wreturn-type，见 LICENSE-NOTICE.md §4。 */
+	return 0;
 }
 
 

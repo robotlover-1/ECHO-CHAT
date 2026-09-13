@@ -62,8 +62,18 @@ $(TEST_BIN_DIR):
 $(BUILD_DIR)/%.o: src/%.c $(HDRS) | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
+# ntyco/ 是从上游 NtyCo 原样引入的第三方代码（见 LICENSE-NOTICE.md §4）。上游自己的
+# Makefile 用 FLAG = -lpthread -O3 -ldl（不带 -Wall），CMakeLists 也没有警告选项，
+# 所以下列警告是上游本来就有的，只是被本仓库的 -Wall -Wextra 暴露出来：
+#   -Wsign-compare     int 循环计数器 vs size_t/nfds_t 长度
+#   -Wunused-variable  遗留的 co 局部变量
+#   -Wunused-function  死函数 nty_epollevent_2poll（全树无调用）
+# -Wreturn-type 故意 **不** 抑制：它在本目录抓出过 3 处真实的函数末尾掉出（UB），
+# 已就地补 return（grep "[本项目补写]"）。保留它可以继续兜住上游同类新缺陷。
+NTYCO_WARN := -Wno-sign-compare -Wno-unused-variable -Wno-unused-function
+
 $(BUILD_DIR)/nty_%.o: ntyco/%.c ntyco/nty_coroutine.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(NTYCO_WARN) -c $< -o $@
 
 $(LIB): $(OBJS) $(NYCOBJS)
 	$(AR) rcs $@ $^
