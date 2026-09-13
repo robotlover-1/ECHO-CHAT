@@ -207,6 +207,10 @@ ensure_frpc() {
   done
   echo "  [$FRPC_NAME] ✘ 未连上 frps（核对 token / FRP_SERVER_ADDR / 两端版本）, 日志尾部:"
   tail -n 5 "$(logfile "$FRPC_NAME")" 2>/dev/null | sed 's/^/    /'
+  if frpc_token_mismatch; then
+    echo "    ↑ 云端 frps 明确回报 token 不匹配：本机的 FRP_AUTH_TOKEN 必须与云端"
+    echo "      deploy/edge/.env 里的那个**完全一致**（两端填同一个值，不能各生成一次）。"
+  fi
   return 1
 }
 

@@ -46,9 +46,32 @@ pid_alive() {
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 
-# 隧道是否已建立：frpc 到云端 frps 控制口的 TCP 连接处于 ESTABLISHED。
-# frpc 无本地监听端口，只能这样探活（进程存在 ≠ 已登录成功）。
+# 隧道是否真的建成 —— 以 frpc 日志为准（进程存在 ≠ 已登录成功）。
+#
+# 曾经用"到 frps 控制口有 ESTABLISHED 连接"来判断，是错的：frpc 配了
+# loginFailExit: false，token 不符时会每 10s 重连一次，每次连接都短暂处于
+# ESTABLISHED，于是"正在重试"被误判成"已登录"，start.sh 报出假的 ✔。
+#
+# 判据：最近一次成功（login to server success / start proxy success）之后，
+# 没有再出现失败（token 不符 / 连接错误）。只看尾部的日志，避免很久以前的成功
+# 记录掩盖当前故障。
 frpc_registered() {
-  ss -tn state established 2>/dev/null \
-    | awk '{print $4}' | grep -qE "[:.]${FRPC_PUBLIC_PORT}$"
+  local log pos_ok pos_err
+  # 进程不在 → 一律算未建立（否则上一次会话留下的旧"成功"记录会骗过判断）
+  pid_alive "$(cat "$(pidfile "$FRPC_NAME")" 2>/dev/null)" || return 1
+  log="$(logfile "$FRPC_NAME")"
+  [ -f "$log" ] || return 1
+  pos_ok="$(tail -n 200 "$log" | grep -nE "login to server success|start proxy success" | tail -1 | cut -d: -f1)"
+  pos_err="$(tail -n 200 "$log" | grep -nE "token in login doesn't match|connect to server error|login to server failed" | tail -1 | cut -d: -f1)"
+  [ -n "$pos_ok" ] || return 1
+  if [ -n "$pos_err" ] && [ "$pos_err" -gt "$pos_ok" ]; then
+    return 1
+  fi
+  return 0
+}
+
+# 日志里是否有"token 不匹配"这一确定性失败（供调用方给出针对性提示）。
+frpc_token_mismatch() {
+  local log; log="$(logfile "$FRPC_NAME")"
+  [ -f "$log" ] && grep -q "token in login doesn't match" "$log"
 }
