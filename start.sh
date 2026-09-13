@@ -153,9 +153,15 @@ ensure_frpc() {
     echo "    前置：bin/frpc 客户端 + 一台跑着 frps 的云主机（deploy/edge），见 README「公网访问」"
     return 2
   fi
+  if [ ! -x "$FRPC_BIN" ] && [ "${ECHO_FETCH_FRPC:-}" = "1" ]; then
+    echo "  [$FRPC_NAME] 未找到 $FRPC_BIN，自动下载（ECHO_FETCH_FRPC=1）..."
+    bash "$BASE/deploy/scripts/fetch_frpc.sh" \
+      || echo "  [$FRPC_NAME] ✘ frpc 下载失败，可稍后单独跑 deploy/scripts/fetch_frpc.sh"
+  fi
   if [ ! -x "$FRPC_BIN" ]; then
     echo "  [$FRPC_NAME] ⚠ 跳过：未找到 $FRPC_BIN"
-    echo "    获取 frp 0.62.1 客户端（须与云端 frps 同版本），见 README「公网访问」"
+    echo "    获取：bash deploy/scripts/fetch_frpc.sh    # 或 ECHO_FETCH_FRPC=1 ./start.sh 自动下"
+    echo "    frp 0.62.1 客户端，须与云端 frps 同版本，见 README「公网访问」"
     return 2
   fi
 

@@ -50,9 +50,37 @@ DEEPSEEK_API_KEY=sk-xxx ./start.sh   # key 走环境变量，勿提交 git
 |---|---|---|
 | 1 | 一台公网云主机，跑着 frps + Nginx | 按 [deploy/README.md](deploy/README.md) 在云主机执行 `deploy/edge`（2C2G 起步） |
 | 2 | 一个域名，DNS A 记录指向云主机 IP | 如 `answermesh.xyz`；大陆机房还需 ICP 备案 |
-| 3 | `bin/frpc` 客户端（与云端 frps **同版本**，本项目用 0.62.1） | `bin/` 已 gitignore，需自行下载 frp 的 Linux amd64 包并放为 `bin/frpc` + `chmod +x`，见 [docs/answermesh-frp-nat-traversal.md](docs/answermesh-frp-nat-traversal.md) |
+| 3 | `bin/frpc` 客户端（与云端 frps **同版本**，本项目用 0.62.1） | 一条命令：`bash deploy/scripts/fetch_frpc.sh`（`bin/` 已 gitignore，脚本会下载 + 官方 sha256 校验 + 安装） |
 
-三者齐备后，**二选一**把配置给 `start.sh`：
+### 那三个值分别怎么来
+
+| 变量 | 是什么 | 怎么获取 |
+|---|---|---|
+| `PUBLIC_DOMAIN` | 你要对外用的域名 | 你自己的域名。去域名服务商控制台加一条 A 记录指向云主机 IP：`example.com.  A  1.2.3.4`（大陆机房还需 ICP 备案） |
+| `FRP_SERVER_ADDR` | 云主机的公网 IPv4 | **在云主机上**执行：`curl -s https://ipinfo.io/ip` 或 `curl -s https://ifconfig.me` |
+| `FRP_AUTH_TOKEN` | 两端共享的密钥，**不是"查"来的，是自己生成的** | `openssl rand -hex 32`（64 位十六进制）——生成一次，云主机和应用节点填**同一个**值 |
+
+配套的命令，抄了就能用：
+
+```bash
+# ① 生成 token（生成一次即可；云端 deploy/edge/.env 与本地 deploy/app/.env 必须一致）
+openssl rand -hex 32
+
+# ② 拿到云主机公网 IP —— 在【云主机】上执行
+curl -s https://ipinfo.io/ip; echo        # 或 curl -s https://ifconfig.me; echo
+
+# ③ 配好域名 A 记录后，本地验证是否指向云主机（回显的应是云 IP）
+dig +short example.com
+
+# ④ 装 frpc 客户端（0.62.1，与云端 frps 同版本；自动 sha256 校验）
+bash deploy/scripts/fetch_frpc.sh
+```
+
+`FRP_BIND_PORT` 通常不用管（默认 `39000`，云端 `deploy/edge/.env` 里可改）。
+
+### 启动
+
+三样齐备后，**二选一**把配置给 `start.sh`：
 
 ```bash
 # A) 环境变量（最省事，不用建文件）——`FRP_AUTH_TOKEN` 必须与云端 .env 里的一致
@@ -66,7 +94,11 @@ cp deploy/app/.env.example deploy/app/.env   # 填 PUBLIC_DOMAIN / FRP_SERVER_AD
 ./start.sh
 ```
 
-可选项：`FRP_BIND_PORT`（云端 frps 的 bind 端口，默认 `39000`）。A 与 B 同时存在时以 **B（`.env` 文件）优先**。
+A 与 B 同时存在时以 **B（`.env` 文件）优先**。也可以让 `start.sh` 顺带把 frpc 也下了：
+
+```bash
+ECHO_FETCH_FRPC=1 PUBLIC_DOMAIN=example.com FRP_SERVER_ADDR=1.2.3.4 FRP_AUTH_TOKEN=<token> ./start.sh
+```
 
 成功后 `start.sh` 结尾会打印 `公网入口 → https://<域名>（frpc 隧道已建立）`；没配置时打印 `公网入口未启用（本机访问不受影响）`——**这是正常的，不影响本地使用**。
 
