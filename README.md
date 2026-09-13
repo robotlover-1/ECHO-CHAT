@@ -58,42 +58,47 @@ DEEPSEEK_API_KEY=sk-xxx ./start.sh   # key 走环境变量，勿提交 git
 |---|---|---|
 | `PUBLIC_DOMAIN` | 你要对外用的域名 | 你自己的域名。去域名服务商控制台加一条 A 记录指向云主机 IP：`example.com.  A  1.2.3.4`（大陆机房还需 ICP 备案） |
 | `FRP_SERVER_ADDR` | 云主机的公网 IPv4 | **在云主机上**执行：`curl -s https://ipinfo.io/ip` 或 `curl -s https://ifconfig.me` |
-| `FRP_AUTH_TOKEN` | 两端共享的密钥，**不是"查"来的，是自己生成的** | `openssl rand -hex 32`（64 位十六进制）。**只生成一次**，然后把同一个串分别填到云端 `deploy/edge/.env` 与本机 `deploy/app/.env`（或本地启动时的环境变量） |
+| `FRP_AUTH_TOKEN` | 两端共享的密钥，**一个需要你手动填到两端的配置值** | **已有部署：直接查云端现成在用的那个**（见 ①），不要重新生成。全新部署才需要 `openssl rand -hex 32` 生成一次，再手动填到两端 |
 
-> ⚠️ **最容易踩的坑：不要两端各跑一次 `openssl rand -hex 32`。** 那会得到两个**不同**的
-> token——frps 端渲染进 `deploy/edge/tunnel/frps.yaml` 的 `token:`，frpc 端拿自己的那个去登录，
-> 结果是 `token in login doesn't match token from configuration`，隧道永远建不起来，
-> 而公网访问表现为 frps 自带的 404 页（`The server is powered by frp.`）。
-> 正确姿势：**一处生成，复制到另一端**。
+> ⚠️ **`openssl rand -hex 32` 什么都不"设置"。** 它只是往屏幕打印一串随机字符——不改文件、
+> 不动配置、两端谁都不会自动知道。它的输出必须由你**手动**送到两个地方：
+> ① 写进云端 `deploy/edge/.env`，再重渲染 `frps.yaml` 并重启 frps（不重启不生效）；
+> ② 传给本地 `./start.sh`。
+> 漏掉任何一端 → frps 回 `token in login doesn't match token from configuration`，
+> 隧道建不起来，公网访问表现为 frps 自带的 404 页（`The server is powered by frp.`）。
+> **排障时正确的第一步是「查云端现有值」，不是「生成新值」。**
 
-配套的命令，抄了就能用：
+配套的命令，抄了就能用（顺序按"先查、再决定要不要生成"）：
 
 ```bash
-# ① 生成 token —— 只跑一次，把输出复制到下面两处
+# ① 【先查】已有云端部署的话，直接用它现在生效的 token —— 不要重新生成
+#    最可靠：读运行中的 frps 容器里渲染好的配置（不依赖你知道部署目录叫什么）
+docker exec $(docker ps --format '{{.Names}}' | grep -i frps | head -1) \
+  grep "token:" /app/config.yaml
+#    或看部署目录里的 .env（目录名可能仍是更名前的 echo-chat-edge）
+grep FRP_AUTH_TOKEN /opt/*edge*/deploy/edge/.env
+
+# ② 【仅当要换新 token 时】生成一次 —— 注意它只是打印，不会写进任何配置
 openssl rand -hex 32
 
-# ② 云端：填进 deploy/edge/.env 并让 frps 重新读到
-#    （token 是渲染进 frps.yaml 的，改完 .env 必须重渲染 + 重启 frps 才生效）
-#    在【云主机】上、部署目录（如 /opt/answermesh-edge）里执行：
-#      vi deploy/edge/.env                    # FRP_AUTH_TOKEN=<①的同一个串>
+# ③ 把 ② 的串【手动】填到云端，并让 frps 重新加载
+#    在【云主机】、部署目录里执行：
+#      vi deploy/edge/.env                    # FRP_AUTH_TOKEN=<②的串>
 #      bash deploy/scripts/render-config.sh edge
-#      docker compose -p answermesh-edge up -d frps
+#      docker compose -p <项目名> restart frps      # 项目名见 docker compose ls
+#    复核（必须能看到新串）：
+#      docker exec <frps容器> grep "token:" /app/config.yaml
 
-# ③ 拿到云主机公网 IP —— 在【云主机】上执行
+# ④ 拿到云主机公网 IP —— 在【云主机】上执行
 curl -s https://ipinfo.io/ip; echo        # 或 curl -s https://ifconfig.me; echo
 
-# ④ 配好域名 A 记录后，本地验证是否指向云主机（回显的应是云 IP）
+# ⑤ 配好域名 A 记录后，本地验证是否指向云主机（回显的应是云 IP）
 dig +short example.com
 
-# ⑤ 装 frpc 客户端（0.62.1，与云端 frps 同版本；自动 sha256 校验）
+# ⑥ 装 frpc 客户端（0.62.1，与云端 frps 同版本；自动 sha256 校验）
 bash deploy/scripts/fetch_frpc.sh
-```
 
-忘了云端用的是哪个 token？在**云主机**上直接查（不必重新生成）：
-
-```bash
-grep FRP_AUTH_TOKEN /opt/*edge*/deploy/edge/.env
-```
+# ⑦ 本机启动时把同一个串传给 start.sh（见下「启动」）
 ```
 
 `FRP_BIND_PORT` 通常不用管（默认 `39000`，云端 `deploy/edge/.env` 里可改）。

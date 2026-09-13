@@ -9,7 +9,9 @@
 - 请求链路：`https://域名 → 云端Nginx:443 → 云端127.0.0.1:39001(frps HTTP vhost) → FRP隧道 → 本地frpc → 127.0.0.1:7080`。
 - 域名：A 记录 `chat.example.com → 云端公网IPv4`（与本地宽带无关；大陆服务器网站需 ICP 备案）。
 - 变量对照：见 deploy/{app,edge}/.env.example（common: PUBLIC_DOMAIN/FRP_AUTH_TOKEN 两端一致）。
-- FRP token：`openssl rand -hex 32`。
+- FRP token：在两个节点中**选一个**跑 `openssl rand -hex 32`，再把同一个串**手动填进两边的 `.env`**。
+  它只是打印一串随机字符，不会自动写进任何文件；只填一端 → frps 回 `token in login doesn't match`，隧道建不起来。
+  已有部署排障时**先查云端正在用的那个值**（`docker exec <frps容器> grep "token:" /app/config.yaml`），而不是重新生成。
 
 ## 一键
 - 应用: cp deploy/app/.env.example deploy/app/.env && sudo bash deploy/scripts/deploy-app.sh

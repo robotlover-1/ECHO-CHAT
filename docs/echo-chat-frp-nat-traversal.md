@@ -294,7 +294,12 @@ esac
 
 ## 5. 安全与运维要点（部署后必读）
 
-1. **FRP token**：`openssl rand -hex 32`，两端一致；勿提交。
+1. **FRP token**：两端必须填**同一个**值，勿提交。注意 `openssl rand -hex 32` **只打印一串随机字符，
+   不会自动写进任何配置**——全新部署时生成一次后要**手动**填进两边的 `.env`（云端还需重渲染 `frps.yaml`
+   并重启 frps 才生效）；**已有部署排障时不要重新生成**，先查云端正在用的值：
+   `docker exec <frps容器> grep "token:" /app/config.yaml`。
+   只填一端 → frps 回 `token in login doesn't match token from configuration`，隧道建不起来，
+   公网表现为 frps 自带的 404 页（`The server is powered by frp.`）。
 2. **39000** 只对 frpc；**39001/7500** 只绑云回环；`7080` 只绑本地回环。
 3. 云端 **frps 强制 TLS** + **additionalScopes**；frps/frpc 同版本（0.62.1）。
 4. Dashboard 默认关闭；监控补位见 `deploy/README.md`（/edge-healthz、端口、5xx、frpc 离线）。
