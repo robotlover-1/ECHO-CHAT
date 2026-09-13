@@ -133,7 +133,10 @@ fi
 echo "== 启动服务 =="
 
 # ---- frpc 公网隧道（可选；配置/二进制缺失则跳过，不影响本地 9 个服务）----
-PUBLIC_DOMAIN=""
+# FRP_DOMAIN：从渲染好的 frpc.yaml 里回读出来的域名，仅供结尾摘要显示。
+# **不要拿 PUBLIC_DOMAIN 存这个**——用户可以只靠环境变量传 PUBLIC_DOMAIN，在这里置空
+# 会把它的输入清掉，于是配置被判成"未配置"（曾因此踩坑，见 commit 说明）。
+FRP_DOMAIN=""
 ensure_frpc() {
   local i rc out
   # 配置来源二选一，优先 deploy/app/.env（完整部署用它，还带向量库/DeepSeek 等其它键）：
@@ -182,10 +185,10 @@ ensure_frpc() {
     printf '%s\n' "$out" | sed 's/^/    /'
     return 1
   fi
-  PUBLIC_DOMAIN="$(grep -A1 'customDomains:' "$FRPC_CONFIG" | grep -oE '"[^"]+"' | tr -d '"' | head -1)"
+  FRP_DOMAIN="$(grep -A1 'customDomains:' "$FRPC_CONFIG" | grep -oE '"[^"]+"' | tr -d '"' | head -1)"
 
   if frpc_registered; then
-    echo "  [$FRPC_NAME] ✔ already running (隧道已建立 → $PUBLIC_DOMAIN)"
+    echo "  [$FRPC_NAME] ✔ already running (隧道已建立 → $FRP_DOMAIN)"
     return 0
   fi
 
@@ -197,7 +200,7 @@ ensure_frpc() {
   ( cd "$BASE" && exec nohup "$FRPC_BIN" -c "$FRPC_CONFIG" >>"$(logfile "$FRPC_NAME")" 2>&1 </dev/null & echo $! > "$_frpc_pf" )
   for i in $(seq 1 20); do
     if frpc_registered; then
-      echo "  [$FRPC_NAME] ✔ 已登录 frps，公网入口就绪 → https://$PUBLIC_DOMAIN"
+      echo "  [$FRPC_NAME] ✔ 已登录 frps，公网入口就绪 → https://$FRP_DOMAIN"
       return 0
     fi
     sleep 0.5
@@ -241,7 +244,7 @@ echo
 if [ ${#failed[@]} -eq 0 ]; then
   echo "✔ $ok/$total 服务就绪 → http://localhost:7080"
   case "$frpc_state" in
-    up)   echo "  公网入口 → https://$PUBLIC_DOMAIN（frpc 隧道已建立）" ;;
+    up)   echo "  公网入口 → https://$FRP_DOMAIN（frpc 隧道已建立）" ;;
     skip) echo "  公网入口未启用（本机访问不受影响）→ 需要公网访问见 README「公网访问」" ;;
   esac
 else
