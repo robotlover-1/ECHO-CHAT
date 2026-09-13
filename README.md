@@ -40,6 +40,38 @@ DEEPSEEK_API_KEY=sk-xxx ./start.sh   # key 走环境变量，勿提交 git
 
 前置依赖：Go、make/gcc（kvstore）、pnpm/node（前端，仅首次）、Python 3.8+（host 需 `pip install -r semantic/requirements.txt tokenizer/requirements.txt`；nuxt/jieba 等按既有说明）。
 
+## 公网访问
+
+`./start.sh` 默认只监听本机（`http://localhost:7080`）。要从公网访问，本项目走的是 **FRP 内网穿透**：云端一台小机器只做入口转发，整套服务仍然只跑在你本地——**所以前提是先有一台公网云主机**，只有环境变量是不够的。
+
+三个前置条件缺一不可：
+
+| # | 需要什么 | 怎么来 |
+|---|---|---|
+| 1 | 一台公网云主机，跑着 frps + Nginx | 按 [deploy/README.md](deploy/README.md) 在云主机执行 `deploy/edge`（2C2G 起步） |
+| 2 | 一个域名，DNS A 记录指向云主机 IP | 如 `answermesh.xyz`；大陆机房还需 ICP 备案 |
+| 3 | `bin/frpc` 客户端（与云端 frps **同版本**，本项目用 0.62.1） | `bin/` 已 gitignore，需自行下载 frp 的 Linux amd64 包并放为 `bin/frpc` + `chmod +x`，见 [docs/answermesh-frp-nat-traversal.md](docs/answermesh-frp-nat-traversal.md) |
+
+三者齐备后，**二选一**把配置给 `start.sh`：
+
+```bash
+# A) 环境变量（最省事，不用建文件）——`FRP_AUTH_TOKEN` 必须与云端 .env 里的一致
+PUBLIC_DOMAIN=example.com \
+FRP_SERVER_ADDR=1.2.3.4 \
+FRP_AUTH_TOKEN=<与云端一致的 token> \
+./start.sh
+
+# B) 配置文件（会自动渲染 deploy/app/tunnel/frpc.yaml）
+cp deploy/app/.env.example deploy/app/.env   # 填 PUBLIC_DOMAIN / FRP_SERVER_ADDR / FRP_AUTH_TOKEN
+./start.sh
+```
+
+可选项：`FRP_BIND_PORT`（云端 frps 的 bind 端口，默认 `39000`）。A 与 B 同时存在时以 **B（`.env` 文件）优先**。
+
+成功后 `start.sh` 结尾会打印 `公网入口 → https://<域名>（frpc 隧道已建立）`；没配置时打印 `公网入口未启用（本机访问不受影响）`——**这是正常的，不影响本地使用**。
+
+> 仅验证云端 frps/Nginx/TLS 是否正常：`bash deploy/scripts/deploy-edge.sh`；分层验收：`bash deploy/scripts/smoke-test.sh edge`。
+
 ## 功能说明
 
 - **免密登录**：首次访问自动以 `device_id` 注册并分配额度，无短信验证码。

@@ -57,16 +57,31 @@ guard_no_residue() {
   fi
 }
 
-# 必填项守卫：为空或以 CHANGE_ME/REPLACE_ME/<...>/sk-placeholder 开头 → 退出。
+# 占位值判定：空 / CHANGE_ME* / REPLACE_ME* / <...> / sk-placeholder* 都算没填。
+_is_placeholder() {
+  local val="${1:-}"
+  [[ -z "${val}" ]] || [[ "${val}" == CHANGE_ME* ]] \
+    || [[ "${val}" == REPLACE_ME* ]] || [[ "${val}" == '<'*'>' ]] \
+    || [[ "${val}" == sk-placeholder* ]]
+}
+
+# 必填项守卫（只校验当前环境变量，不涉及 .env 文件）——给"直接传环境变量"的调用方用。
+guard_required_vars() {
+  local v
+  for v in "$@"; do
+    if _is_placeholder "${!v:-}"; then
+      die "必填变量 ${v} 未设置或仍是占位值"
+    fi
+  done
+}
+
+# 必填项守卫：先加载 envfile，再校验变量。
 guard_required() {
   local envfile="$1"; shift
   require_env "${envfile}"
   local v
   for v in "$@"; do
-    local val="${!v:-}"
-    if [[ -z "${val}" ]] || [[ "${val}" == CHANGE_ME* ]] \
-       || [[ "${val}" == REPLACE_ME* ]] || [[ "${val}" == '<'*'>' ]] \
-       || [[ "${val}" == sk-placeholder* ]]; then
+    if _is_placeholder "${!v:-}"; then
       die "必填变量 ${v} 未设置或仍是占位(见 ${envfile}.example)"
     fi
   done

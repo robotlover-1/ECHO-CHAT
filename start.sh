@@ -136,26 +136,42 @@ echo "== 启动服务 =="
 PUBLIC_DOMAIN=""
 ensure_frpc() {
   local i rc out
-  if [ ! -f "$FRPC_ENV" ]; then
-    echo "  [$FRPC_NAME] ⚠ 跳过：未找到 $FRPC_ENV"
-    echo "    启用公网入口：cp deploy/app/.env.example deploy/app/.env 并填 PUBLIC_DOMAIN/FRP_SERVER_ADDR/FRP_AUTH_TOKEN"
+  # 配置来源二选一，优先 deploy/app/.env（完整部署用它，还带向量库/DeepSeek 等其它键）：
+  #   A) 文件：deploy/app/.env
+  #   B) 环境变量：PUBLIC_DOMAIN / FRP_SERVER_ADDR / FRP_AUTH_TOKEN（+ 可选 FRP_BIND_PORT）
+  # 只想开公网入口时 B 更省事，不必先 cp 一份 .env。
+  local cfg_src=""
+  if [ -f "$FRPC_ENV" ]; then
+    cfg_src="file"
+  elif [ -n "${PUBLIC_DOMAIN:-}" ] && [ -n "${FRP_SERVER_ADDR:-}" ] && [ -n "${FRP_AUTH_TOKEN:-}" ]; then
+    cfg_src="env"
+  else
+    echo "  [$FRPC_NAME] ⚠ 跳过：公网入口未配置（不影响本地 http://localhost:7080）"
+    echo "    配法二选一："
+    echo "      A) 环境变量：PUBLIC_DOMAIN=<域名> FRP_SERVER_ADDR=<云端IP> FRP_AUTH_TOKEN=<与云端一致> ./start.sh"
+    echo "      B) 配置文件：cp deploy/app/.env.example deploy/app/.env 后填写"
+    echo "    前置：bin/frpc 客户端 + 一台跑着 frps 的云主机（deploy/edge），见 README「公网访问」"
     return 2
   fi
   if [ ! -x "$FRPC_BIN" ]; then
     echo "  [$FRPC_NAME] ⚠ 跳过：未找到 $FRPC_BIN"
-    echo "    获取 frp 0.62.1 客户端（须与云端 frps 同版本），见 docs/answermesh-frp-nat-traversal.md"
+    echo "    获取 frp 0.62.1 客户端（须与云端 frps 同版本），见 README「公网访问」"
     return 2
   fi
 
+  # 端口有默认值：模板里是 ${FRP_BIND_PORT}，envsubst 不支持 :- 兜底，只能在这里补齐。
+  FRP_BIND_PORT="${FRP_BIND_PORT:-39000}"; export FRP_BIND_PORT
+
   # 复用 deploy/scripts/lib.sh 的 .env 解析与受限渲染（与 deploy-app.sh 同一套，含残留变量守卫）
-  echo "  [$FRPC_NAME] 渲染配置 ..."
+  echo "  [$FRPC_NAME] 渲染配置 ... (来源: $([ "$cfg_src" = file ] && echo "$FRPC_ENV" || echo '环境变量'))"
   if ! out="$(bash -c '
         set -euo pipefail
         source "$1"
-        require_env "$2" "$3"
+        if [ "$6" = file ]; then require_env "$2" "$3"; fi
+        guard_required_vars PUBLIC_DOMAIN FRP_SERVER_ADDR FRP_AUTH_TOKEN
         render_restricted "$4" "$5" "\${FRP_SERVER_ADDR} \${FRP_BIND_PORT} \${FRP_AUTH_TOKEN} \${PUBLIC_DOMAIN}"
       ' _ "$BASE/deploy/scripts/lib.sh" "$FRPC_ENV" "$FRPC_ENV.example" \
-        "$FRPC_TEMPLATE" "$FRPC_CONFIG" 2>&1)"; then
+        "$FRPC_TEMPLATE" "$FRPC_CONFIG" "$cfg_src" 2>&1)"; then
     echo "  [$FRPC_NAME] ✘ 配置渲染失败:"
     printf '%s\n' "$out" | sed 's/^/    /'
     return 1
@@ -220,7 +236,7 @@ if [ ${#failed[@]} -eq 0 ]; then
   echo "✔ $ok/$total 服务就绪 → http://localhost:7080"
   case "$frpc_state" in
     up)   echo "  公网入口 → https://$PUBLIC_DOMAIN（frpc 隧道已建立）" ;;
-    skip) echo "  公网入口未启用（本机访问不受影响）" ;;
+    skip) echo "  公网入口未启用（本机访问不受影响）→ 需要公网访问见 README「公网访问」" ;;
   esac
 else
   echo "✘ ${#failed[@]} 个失败: ${failed[*]}; 日志在 runtime/logs/, 用 ./stop.sh 清理后重试"
