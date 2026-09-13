@@ -55,16 +55,16 @@ gitlab 上提交的 `openai-api-proxy/dev.config.yaml` 的 `base_url` 是 `http:
 
 ## 3. 仓库拆分
 
-| | pocket-kv（C 存储仓） | ECHO-CHAT（ai 助手仓） |
+| | pocket-kv（C 存储仓） | AnswerMesh（ai 助手仓） |
 |---|---|---|
-| 远程 | `git@github.com:robotlover-1/pocket-kv.git`（新建） | `git@github.com:robotlover-1/ECHO-CHAT.git`（新建） |
+| 远程 | `git@github.com:robotlover-1/pocket-kv.git`（新建） | `git@github.com:robotlover-1/Answermesh.git`（新建） |
 | 内容 | `kvstore/`（含 NtyCo submodule）、`Makefile`、`lib.sh`、`configs/`、`docs/`（kvstore 相关）、`README.md`、`LICENSE`、`.gitignore`、`bin/` | `ai-chat-backend`、`ai-chat-service`、`keywords-filter`、`openai-api-proxy`、`mock-openai-api`、`tokenizer`、`ai-chat-web`、`ai-chat-stack`、`monitoring`、`start.sh`、`stop.sh`、`lib.sh`、`configs/`、`docs/` |
 | submodule | NtyCo（github） | kvstore → pocket-kv |
 | 历史 | 全新初始提交 | 全新初始提交 |
 
 - 现有 `9.1-kvstore` 保持不动。
 - ai-chat 的 `start.sh` / Makefile 需从 submodule 路径编译/启动 kvstore（`kvstore/kvstore`），配置 `configs/kvstore-ai.conf`（端口 5160）不变。
-- 前置条件：github 空仓库已由用户创建（`robotlover-1/pocket-kv`、`robotlover-1/ECHO-CHAT`）。
+- 前置条件：github 空仓库已由用户创建（`robotlover-1/pocket-kv`、`robotlover-1/Answermesh`）。
 
 ## 4. 明文 KV 存储问题-回答（方案 A，已批准）
 
@@ -96,7 +96,7 @@ HSET semcache:<原始问题>  =  [u32 dim][float vec[dim]]
 ### 4.3 涉及改动
 
 - **kvstore C 侧**（pocket-kv）：`src/storage/kvs_vector.c` 的 `parse_vec` 由解析 `[qlen][query][alen][answer][dim][vec]` 简化为 `[dim][vec]`。VSEARCH 扫描逻辑不变。
-- **ai-chat-service**（ECHO-CHAT）：`chat-server/semcache/semcache.go` 重写——去掉 fnv32a hash，key 用原始问题；encode/decode 简化为 `[dim][vec]`；`decodeAnswer`/`decodeQuery` 改为由 key 剥离前缀 + GET qa:。
+- **ai-chat-service**（AnswerMesh）：`chat-server/semcache/semcache.go` 重写——去掉 fnv32a hash，key 用原始问题；encode/decode 简化为 `[dim][vec]`；`decodeAnswer`/`decodeQuery` 改为由 key 剥离前缀 + GET qa:。
 
 ### 4.4 边界
 
@@ -161,7 +161,7 @@ int32  tokens_saved = 8; // 节省 tokens（缓存命中，若调大模型本会
 **kvstore 仓（pocket-kv）**
 - `src/storage/kvs_vector.c`：parse_vec 简化。
 
-**ai-chat 仓（ECHO-CHAT）**
+**ai-chat 仓（AnswerMesh）**
 - `ai-chat-service/proto/chat.proto` + 重新生成 pb.go（×2：service/backend）
 - `ai-chat-service/chat-server/semcache/semcache.go`：重写为明文 key + GET qa:。
 - `ai-chat-service/chat-server/server/server.go`：CacheQuery/CacheWrite 调用适配；流式响应补 source/summary。

@@ -1,6 +1,6 @@
 # semantic（语义检索独立服务）
 
-承接 ECHO-CHAT 语义缓存的向量生成与规则校验，与 tokenizer(计 token)解耦。
+承接 AnswerMesh 语义缓存的向量生成与规则校验，与 tokenizer(计 token)解耦。
 纯逻辑模块（parse/decision/models/embedding/ontology）不 import nuxt，py3.8 兼容；服务薄路由在 `semantic.py`。
 
 - `/embed`：返回 **384 维 L2 归一 e5 语义向量**（`multilingual-e5-small` INT8 ONNX，token 输出经 attention-mask 平均池化 L2），
@@ -92,7 +92,7 @@
 2. **手动 curl**：
    ```bash
    curl -fL -o /tmp/e5s.tar.gz \
-     https://github.com/robotlover-1/ECHO-CHAT/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz
+     https://github.com/robotlover-1/Answermesh/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz
    mkdir -p semantic/models/e5s-v1 && tar -xzf /tmp/e5s.tar.gz -C semantic/models/e5s-v1 --strip-components=1
    ```
 3. **从开发机拷贝** `semantic/models/e5s-v1/`（重新导出见 `tools/export_e5_onnx.py`，需一次性 venv + torch）。

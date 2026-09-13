@@ -1,9 +1,9 @@
-# ECHO-CHAT 基于 FRP 的公网访问部署与现有 Tunnel 改造方案
+# AnswerMesh 基于 FRP 的公网访问部署与现有 Tunnel 改造方案
 
 > 日期：2026-09-06  
-> 适用仓库：`robotlover-1/ECHO-CHAT`  
+> 适用仓库：`robotlover-1/Answermesh`  
 > 核对分支：`main`，提交 `4022ad0`  
-> 约束：公网云服务器仅 2 核 2 GB；完整 ECHO-CHAT 继续运行在本地电脑或虚拟机。
+> 约束：公网云服务器仅 2 核 2 GB；完整 AnswerMesh 继续运行在本地电脑或虚拟机。
 
 ## 1. 修正结论
 
@@ -20,13 +20,13 @@
           ▼
 本地电脑/虚拟机
    ├── frpc：FRP客户端
-   └── ECHO-CHAT：127.0.0.1:7080
+   └── AnswerMesh：127.0.0.1:7080
           ├── ai-chat-backend / ai-chat-service / zrpc
           ├── tokenizer / semantic / keyword / sensitive
           └── proxy / kvstore / MySQL / 向量数据库
 ```
 
-云服务器只做公网入口和流量转发，不运行 ECHO-CHAT、不加载语义模型、不运行 MySQL。frpc 从本地主动连接公网 frps，因此本地无需公网 IP，也无需路由器端口映射。
+云服务器只做公网入口和流量转发，不运行 AnswerMesh、不加载语义模型、不运行 MySQL。frpc 从本地主动连接公网 frps，因此本地无需公网 IP，也无需路由器端口映射。
 
 ## 2. FRP 与 Tunnel 的边界
 
@@ -41,11 +41,11 @@
 | 自动分配端口/子域名 | 不需要 | 域名和端口固定 |
 | 阿里云 DNS 自动化 | 不需要 | 手工配置一次 A 记录即可 |
 
-`11.3-tunnel-master` 本质上是 FRP 上层的多用户管理平台。ECHO-CHAT 只需复用其底层 FRP 能力，不应部署整套管理平台。
+`11.3-tunnel-master` 本质上是 FRP 上层的多用户管理平台。AnswerMesh 只需复用其底层 FRP 能力，不应部署整套管理平台。
 
 ## 3. 当前 GitHub 实现如何处理
 
-截至 `4022ad0`，仓库已经实现的是轻量固定 FRP 方案，并没有把完整 tunnel 平台接入 ECHO-CHAT：
+截至 `4022ad0`，仓库已经实现的是轻量固定 FRP 方案，并没有把完整 tunnel 平台接入 AnswerMesh：
 
 | 当前文件/功能 | 部署位置 | 处理意见 |
 |---|---|---|
@@ -54,12 +54,12 @@
 | `deploy/edge/nginx/*` | 公网云服务器 | 保留 |
 | `deploy/app/compose.yaml` | 本地机器 | 保留，只启动 frpc |
 | `deploy/app/tunnel/frpc.yaml.envsubst` | 本地机器 | 保留 |
-| `docker/compose.yaml` | 本地机器 | 保留，运行完整 ECHO-CHAT |
+| `docker/compose.yaml` | 本地机器 | 保留，运行完整 AnswerMesh |
 | `7080` 绑定 `127.0.0.1` | 本地机器 | 保留，frpc 使用 host 网络访问 |
 | 配置模板化、密钥外置 | 两端 | 保留 |
 | TLS bootstrap、流式代理、安全扫描 | 云端/仓库 | 保留 |
 
-因此不需要回退当前 FRP 部署系列提交，也不能删除 `deploy/app/tunnel`、`deploy/edge/tunnel`、frpc 或 frps。上一版文档中“删除 FRP、把完整 ECHO-CHAT 部署到云服务器”的建议不适用于本项目，本版已纠正。
+因此不需要回退当前 FRP 部署系列提交，也不能删除 `deploy/app/tunnel`、`deploy/edge/tunnel`、frpc 或 frps。上一版文档中“删除 FRP、把完整 AnswerMesh 部署到云服务器”的建议不适用于本项目，本版已纠正。
 
 ## 4. 资源和端口规划
 
@@ -72,7 +72,7 @@
 - 3～5 Mbps 可供演示，5～10 Mbps 更稳妥；
 - 固定公网 IPv4；
 - 可创建 2 GB swap 防止偶发 OOM，但 swap 不能替代内存；
-- 不在云端构建或运行完整 ECHO-CHAT。
+- 不在云端构建或运行完整 AnswerMesh。
 
 ### 4.2 本地机器
 
@@ -90,7 +90,7 @@
 |---:|---|---|
 | 22/TCP | 仅管理员固定 IP | SSH |
 | 80/TCP | 全网 | ACME验证和HTTPS跳转 |
-| 443/TCP | 全网 | 公网ECHO-CHAT |
+| 443/TCP | 全网 | 公网AnswerMesh |
 | 39000/TCP | 优先限制为本地出口公网IP | frpc连接frps |
 | 39001/TCP | 不开放 | frps HTTP vhost，仅供同机Nginx |
 | 7500/TCP | 不开放 | frps dashboard，仅绑定回环 |
@@ -113,7 +113,7 @@ https://chat.example.com
   → 云端127.0.0.1:39001（frps HTTP vhost）
   → FRP隧道
   → 本地frpc
-  → 本地127.0.0.1:7080（ECHO-CHAT）
+  → 本地127.0.0.1:7080（AnswerMesh）
 ```
 
 域名只解析到云服务器，与本地宽带 IP 无关。若使用中国大陆服务器，对外网站通常需要 ICP 备案。
@@ -179,7 +179,7 @@ auth:
   token: "<FRP_AUTH_TOKEN>"
 
 proxies:
-  - name: echo-chat-web
+  - name: answermesh-web
     type: http
     localIP: 127.0.0.1
     localPort: 7080
@@ -224,10 +224,10 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ### 7.3 拉取代码并配置 edge
 
 ```bash
-sudo mkdir -p /opt/echo-chat-edge
-sudo chown "$USER":"$USER" /opt/echo-chat-edge
-git clone https://github.com/robotlover-1/ECHO-CHAT.git /opt/echo-chat-edge
-cd /opt/echo-chat-edge
+sudo mkdir -p /opt/answermesh-edge
+sudo chown "$USER":"$USER" /opt/answermesh-edge
+git clone https://github.com/robotlover-1/Answermesh.git /opt/answermesh-edge
+cd /opt/answermesh-edge
 
 cp deploy/edge/.env.example deploy/edge/.env
 chmod 600 deploy/edge/.env
@@ -245,13 +245,13 @@ sudo bash deploy/scripts/deploy-edge.sh
 
 首次运行时如果本地 frpc 尚未连接，脚本最后的应用健康检查可能失败，但不代表 frps、Nginx或证书失败。完成本地部署后重新执行脚本或单独执行端到端冒烟测试。
 
-## 8. 本地 ECHO-CHAT 部署
+## 8. 本地 AnswerMesh 部署
 
 ### 8.1 拉取代码与配置
 
 ```bash
-git clone https://github.com/robotlover-1/ECHO-CHAT.git
-cd ECHO-CHAT
+git clone https://github.com/robotlover-1/Answermesh.git
+cd AnswerMesh
 cp deploy/app/.env.example deploy/app/.env
 chmod 600 deploy/app/.env
 ```
@@ -266,8 +266,8 @@ sudo bash deploy/scripts/deploy-app.sh
 
 脚本会：
 
-1. 渲染 ECHO-CHAT 和 frpc 配置；
-2. 构建并启动完整 ECHO-CHAT；
+1. 渲染 AnswerMesh 和 frpc 配置；
+2. 构建并启动完整 AnswerMesh；
 3. 等待 `http://127.0.0.1:7080/api/readyz`；
 4. 应用就绪后启动 frpc。
 
@@ -284,7 +284,7 @@ frpc 日志应显示成功登录 frps、代理注册成功。
 ## 9. 分层联调
 
 ```bash
-# L1：本地ECHO-CHAT
+# L1：本地AnswerMesh
 curl -fsS http://127.0.0.1:7080/api/readyz
 
 # L2：在云服务器检查frps vhost
@@ -311,7 +311,7 @@ curl -fsS https://chat.example.com/api/health
 README 将角色写清楚：
 
 ```text
-本地应用节点：完整ECHO-CHAT + frpc
+本地应用节点：完整AnswerMesh + frpc
 公网边缘节点：2核2G云服务器，仅frps + Nginx + Certbot
 ```
 
@@ -332,7 +332,7 @@ preflight_host 1536 20480
 云端首次部署时 frpc 可能还没上线。建议：
 
 - `deploy-edge.sh` 只验证 frps、Nginx配置和TLS握手；
-- frpc连接后再运行 `smoke-test.sh edge` 验证 ECHO-CHAT；
+- frpc连接后再运行 `smoke-test.sh edge` 验证 AnswerMesh；
 - 避免把“本地应用未上线”误报为“云端部署失败”。
 
 ### 10.4 增加日志轮转
@@ -406,7 +406,7 @@ render-config.sh中的FRP渲染逻辑
 ### 云服务器
 
 - [ ] 只运行frps、Nginx和必要系统服务；
-- [ ] 未运行完整ECHO-CHAT、MySQL、Redis、K8s或tunnel管理平台；
+- [ ] 未运行完整AnswerMesh、MySQL、Redis、K8s或tunnel管理平台；
 - [ ] 2 GB内存下无持续OOM或swap抖动；
 - [ ] 80/443公网可达；
 - [ ] 39000可供frpc连接；
@@ -416,7 +416,7 @@ render-config.sh中的FRP渲染逻辑
 
 ### 本地机器
 
-- [ ] ECHO-CHAT全部服务正常；
+- [ ] AnswerMesh全部服务正常；
 - [ ] `/api/readyz`成功；
 - [ ] 7080只监听127.0.0.1；
 - [ ] frpc成功登录frps；
@@ -437,6 +437,6 @@ render-config.sh中的FRP渲染逻辑
 
 最终采用：
 
-> 公网2核2G云服务器运行 `frps + Nginx + Certbot`；本地机器运行完整 `ECHO-CHAT + frpc`。
+> 公网2核2G云服务器运行 `frps + Nginx + Certbot`；本地机器运行完整 `AnswerMesh + frpc`。
 
-不部署完整 tunnel 管理平台，不在云服务器运行 ECHO-CHAT，也不回退当前已实现的固定 FRP 链路。代码侧只需进一步明确双节点说明，降低edge资源预检阈值，拆分云端自检与端到端自检，并增加日志轮转。
+不部署完整 tunnel 管理平台，不在云服务器运行 AnswerMesh，也不回退当前已实现的固定 FRP 链路。代码侧只需进一步明确双节点说明，降低edge资源预检阈值，拆分云端自检与端到端自检，并增加日志轮转。

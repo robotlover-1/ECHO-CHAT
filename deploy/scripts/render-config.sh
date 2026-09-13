@@ -2,8 +2,8 @@
 # 部署前渲染：把 .env 注入模板，产出 gitignore 的最终配置。
 # 用法: render-config.sh app | edge
 #   app  : docker/config/{backend,service}.yaml + deploy/app/tunnel/frpc.yaml
-#   edge : deploy/edge/tunnel/frps.yaml + deploy/edge/nginx/echo-chat.conf
-# 说明: nginx 完整/引导 conf 由 deploy-edge.sh 按证书阶段决定渲染哪个模板到 echo-chat.conf。
+#   edge : deploy/edge/tunnel/frps.yaml + deploy/edge/nginx/answermesh.conf
+# 说明: nginx 完整/引导 conf 由 deploy-edge.sh 按证书阶段决定渲染哪个模板到 answermesh.conf。
 set -euo pipefail
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -31,7 +31,7 @@ case "${1:-}" in
     render_restricted "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml.envsubst" \
       "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml" \
       '${FRP_BIND_PORT} ${FRP_VHOST_HTTP_PORT} ${FRP_AUTH_TOKEN}'
-    # echo-chat.conf 由 deploy-edge.sh 决定写入哪个模板，此处不渲染。
+    # answermesh.conf 由 deploy-edge.sh 决定写入哪个模板，此处不渲染。
     ;;
   *) die "用法: render-config.sh app|edge" ;;
 esac

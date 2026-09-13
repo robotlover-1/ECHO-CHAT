@@ -1,14 +1,14 @@
-# ECHO-CHAT 边缘 2核2G FRP 部署修订 Implementation Plan
+# AnswerMesh 边缘 2核2G FRP 部署修订 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在分支 `fix/edge-2c2g-frp-deployment` 上完成 FRP 边缘部署修订：服务端强制 TLS、鉴权扩展、Dashboard 关闭、日志轮转、云端自检确定性（`/edge-healthz` + 状态分类）、按真实 NDJSON 协议重写 smoke e2e，并更新 README。
 
-**Architecture:** 公网 2核2G 云主机仅 frps+Nginx+Certbot；本地完整 ECHO-CHAT+frpc。本次是配置/脚本/文档修订，无业务代码改动。**不回退现有固定 FRP 链路。**
+**Architecture:** 公网 2核2G 云主机仅 frps+Nginx+Certbot；本地完整 AnswerMesh+frpc。本次是配置/脚本/文档修订，无业务代码改动。**不回退现有固定 FRP 链路。**
 
 **Tech Stack:** docker compose v2、FRP 0.62.1（frps/frpc）、nginx 1.27、GNU envsubst、bash。
 
-**Spec:** `docs/superpowers/specs/2026-09-06-echo-chat-edge-2c2g-frp-revision-design.md`（rev2，已合入评审 P0-1~4 + P1-1~8）。主方案：`docs/deploy/2026-09-06-echo-chat-direct-public-deployment-and-tunnel-removal.md`（新增归档，不修改）。
+**Spec:** `docs/superpowers/specs/2026-09-06-answermesh-edge-2c2g-frp-revision-design.md`（rev2，已合入评审 P0-1~4 + P1-1~8）。主方案：`docs/deploy/2026-09-06-answermesh-direct-public-deployment-and-tunnel-removal.md`（新增归档，不修改）。
 
 ## Global Constraints
 
@@ -124,7 +124,7 @@ auth:
 - [ ] **Step 6: 验证**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 bash -n deploy/scripts/render-config.sh && echo "syntax OK"
 python3 -c "import yaml;[yaml.safe_load(open(f)) for f in ['deploy/edge/compose.yaml','deploy/edge/tunnel/frps.yaml.envsubst','deploy/app/tunnel/frpc.yaml.envsubst']];print('yaml OK')"
 # 渲染冒烟（dummy edge .env，无 dashboard 变量必须能通过 guard）
@@ -163,7 +163,7 @@ git commit -m "fix(deploy): frps 强制TLS+扩展鉴权、关闭dashboard、边�
 ### Task 2: Nginx `/edge-healthz` + deploy-edge.sh 云端自检拆分与就绪等待
 
 **Files:**
-- Modify: `deploy/edge/nginx/echo-chat.conf.envsubst`
+- Modify: `deploy/edge/nginx/answermesh.conf.envsubst`
 - Modify: `deploy/scripts/deploy-edge.sh`
 - Modify: `deploy/scripts/deploy-app.sh`
 
@@ -173,7 +173,7 @@ git commit -m "fix(deploy): frps 强制TLS+扩展鉴权、关闭dashboard、边�
 
 - [ ] **Step 1: nginx full conf 加 /edge-healthz（443 与 80 server）**
 
-`deploy/edge/nginx/echo-chat.conf.envsubst`：
+`deploy/edge/nginx/answermesh.conf.envsubst`：
 
 80 server 的 acme location 之后（`location / { return 301 ...; }` 之前）插入：
 
@@ -277,11 +277,11 @@ info "云端自检: TLS/Nginx(/edge-healthz)..."
 curl -fsS --max-time 15 "https://${PUBLIC_DOMAIN}/edge-healthz" >/dev/null \
   || die "公网 DNS/TLS/Nginx 自检失败(/edge-healthz)——查 80/443 安全组与 nginx 日志"
 
-info "云端自检: ECHO-CHAT 业务链路(/api/health)..."
+info "云端自检: AnswerMesh 业务链路(/api/health)..."
 code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${PUBLIC_DOMAIN}/api/health" 2>/dev/null)" || code=000
 case "${code}" in
-  200)            info "ECHO-CHAT 链路已连通，建议再跑 smoke-test.sh edge/e2e" ;;
-  502|503|504)    info "edge 正常(HTTP ${code})；本地 frpc/ECHO-CHAT 未就绪——frpc 上线后再跑 smoke-test.sh edge" ;;
+  200)            info "AnswerMesh 链路已连通，建议再跑 smoke-test.sh edge/e2e" ;;
+  502|503|504)    info "edge 正常(HTTP ${code})；本地 frpc/AnswerMesh 未就绪——frpc 上线后再跑 smoke-test.sh edge" ;;
   000)            die "HTTPS 连接失败(000)";;
   *)              die "HTTPS 返回非预期状态 ${code}，检查 Nginx 路由/后端" ;;
 esac
@@ -308,21 +308,21 @@ fi
 - [ ] **Step 7: 验证（bash + nginx -t wrapper）**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 bash -n deploy/scripts/deploy-edge.sh && bash -n deploy/scripts/deploy-app.sh && echo "syntax OK"
 # 全量 conf 渲染 + /edge-healthz 存在 + 无残留 + $host 保留
 export PUBLIC_DOMAIN=chat.example.com FRP_VHOST_HTTP_PORT=39001
 mkdir -p /tmp/echot2/conf.d && cd /tmp/echot2
 openssl req -x509 -nodes -newkey rsa:2048 -days 1 -keyout privkey.pem -out fullchain.pem -subj "/CN=chat.example.com" >/dev/null 2>&1
 envsubst '${PUBLIC_DOMAIN} ${FRP_VHOST_HTTP_PORT}' \
-  < /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT/deploy/edge/nginx/echo-chat.conf.envsubst > conf.d/echo-chat.conf
-grep -c 'edge-healthz' conf.d/echo-chat.conf            # 期望 2（80 与 443 各一）
-grep -c '\$\{' conf.d/echo-chat.conf || true             # 期望 0
-grep -c '\$host' conf.d/echo-chat.conf                   # 期望 >=1
-sed -i 's|/etc/letsencrypt/live/chat.example.com|/tmp/echot2|g' conf.d/echo-chat.conf
+  < /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh/deploy/edge/nginx/answermesh.conf.envsubst > conf.d/answermesh.conf
+grep -c 'edge-healthz' conf.d/answermesh.conf            # 期望 2（80 与 443 各一）
+grep -c '\$\{' conf.d/answermesh.conf || true             # 期望 0
+grep -c '\$host' conf.d/answermesh.conf                   # 期望 >=1
+sed -i 's|/etc/letsencrypt/live/chat.example.com|/tmp/echot2|g' conf.d/answermesh.conf
 printf 'pid /tmp/echot2/nginx.pid; error_log /tmp/echot2/error.log; events { worker_connections 64; } http { include /etc/nginx/mime.types; include /tmp/echot2/conf.d/*.conf; }\n' > main.conf
 nginx -t -c /tmp/echot2/main.conf -p /tmp/echot2/
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT && rm -rf /tmp/echot2
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh && rm -rf /tmp/echot2
 ```
 
 Expected: `syntax OK`；`edge-healthz` 计数 2；无残留；`nginx: configuration ... test is successful`。
@@ -330,7 +330,7 @@ Expected: `syntax OK`；`edge-healthz` 计数 2；无残留；`nginx: configurat
 - [ ] **Step 8: Commit**
 
 ```bash
-git add deploy/edge/nginx/echo-chat.conf.envsubst deploy/scripts/deploy-edge.sh deploy/scripts/deploy-app.sh
+git add deploy/edge/nginx/answermesh.conf.envsubst deploy/scripts/deploy-edge.sh deploy/scripts/deploy-app.sh
 git commit -m "fix(deploy): /edge-healthz 静态探针 + edge 云端自检拆分与确定性
 - P0-2 assert_service_running(ps -q+inspect) + wait_tcp(/dev/tcp) 就绪等待
 - P0-3 Nginx 443/80 /edge-healthz；/api/health 业务码分类 200/502,503,504/000/*
@@ -430,7 +430,7 @@ PY
 - [ ] **Step 3: 断言函数单测（样本文件 + source lib）**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 printf '%s\n%s\n%s\n' '{"id":"a","delta":"你"}' '{"id":"a","delta":"好"}' '{"text":"你好","source":"llm"}' > /tmp/ok.ndjson
 printf '%s\n' '{"status":"Fail","message":"x"}' > /tmp/one.ndjson
 printf '<html>502 Bad Gateway</html>\n' > /tmp/html.body
@@ -467,8 +467,8 @@ git commit -m "fix(deploy): smoke e2e 按真实 NDJSON 帧重写(P0-4)
 
 ```markdown
 ## 双节点角色与资源
-- 本地应用节点：完整 ECHO-CHAT（docker/compose，127.0.0.1:7080 仅回环）+ frpc（deploy/app）。建议 ≥4核8GB / 80GB；本地断电/休眠/断网即断公网。
-- 公网边缘节点：仅 frps + Nginx + Certbot（deploy/edge），2核2G / 40GB 即可；不运行 ECHO-CHAT/MySQL/语义模型。
+- 本地应用节点：完整 AnswerMesh（docker/compose，127.0.0.1:7080 仅回环）+ frpc（deploy/app）。建议 ≥4核8GB / 80GB；本地断电/休眠/断网即断公网。
+- 公网边缘节点：仅 frps + Nginx + Certbot（deploy/edge），2核2G / 40GB 即可；不运行 AnswerMesh/MySQL/语义模型。
 - 请求链路：`https://域名 → 云端Nginx:443 → 云端127.0.0.1:39001(frps HTTP vhost) → FRP隧道 → 本地frpc → 127.0.0.1:7080`。
 - 域名：A 记录 `chat.example.com → 云端公网IPv4`（与本地宽带无关；大陆服务器网站需 ICP 备案）。
 - 变量对照：见 deploy/{app,edge}/.env.example（common: PUBLIC_DOMAIN/FRP_AUTH_TOKEN 两端一致）。
@@ -527,7 +527,7 @@ git commit -m "fix(deploy): smoke e2e 按真实 NDJSON 帧重写(P0-4)
 ```markdown
 ## 上线前门禁（合并 main / 正式上线前须完成，结果记入验收文档）
 - 真实 2核2G 云主机跑通 deploy-edge.sh（含首次证书申请）；本地 deploy-app.sh 后 L1–L4 分层通过。
-- T 验收：见 docs/deploy/2026-09-06-echo-chat-direct-public-deployment-and-tunnel-removal.md §13 与评审 §7（T01–T18）。
+- T 验收：见 docs/deploy/2026-09-06-answermesh-direct-public-deployment-and-tunnel-removal.md §13 与评审 §7（T01–T18）。
 - 演练：frpc 断连/恢复、云主机重启自动恢复、certbot renew --dry-run + reload hook。
 - 端口扫描确认：80/443/39000 符合策略；39001/7500 公网不可达。
 ```
@@ -535,7 +535,7 @@ git commit -m "fix(deploy): smoke e2e 按真实 NDJSON 帧重写(P0-4)
 - [ ] **Step 6: 验证 + Commit**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 # 检查要点是否都出现
 grep -c '非推荐生产\|edge-healthz\|502\|39000 访问策略\|上线前门禁' deploy/README.md
 git add deploy/README.md
@@ -551,9 +551,9 @@ git commit -m "docs(deploy): README 双节点角色/自检语义/观测补位/39
 - [ ] **Step 1: 语法/渲染全链冒烟**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 for f in deploy/scripts/deploy-edge.sh deploy/scripts/deploy-app.sh deploy/scripts/smoke-test.sh deploy/scripts/render-config.sh deploy/scripts/lib.sh; do bash -n "$f" || exit 1; done; echo "bash -n OK"
-for f in deploy/edge/compose.yaml deploy/edge/tunnel/frps.yaml.envsubst deploy/app/tunnel/frpc.yaml.envsubst deploy/edge/nginx/echo-chat.conf.envsubst deploy/edge/nginx/echo-chat.bootstrap.conf.envsubst; do
+for f in deploy/edge/compose.yaml deploy/edge/tunnel/frps.yaml.envsubst deploy/app/tunnel/frpc.yaml.envsubst deploy/edge/nginx/answermesh.conf.envsubst deploy/edge/nginx/answermesh.bootstrap.conf.envsubst; do
   python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1])); print('yaml OK', sys.argv[1])" "$f"
 done
 grep -rn 'FRP_DASHBOARD_PASSWORD\|:7500:' deploy/ || echo "no dashboard/7500 residue"
@@ -562,7 +562,7 @@ grep -rn 'FRP_DASHBOARD_PASSWORD\|:7500:' deploy/ || echo "no dashboard/7500 res
 - [ ] **Step 2: 渲染冒烟（app+edge dummy，验证 additionalScopes/tls.force、无 webServer、无残留）**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 cp deploy/app/.env.example deploy/app/.env; cp deploy/edge/.env.example deploy/edge/.env
 sed -i -E 's/CHANGE_ME_random_hex_64/1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff/g; s/CHANGE_ME_sk-xxx/sk-dummy/; s#CHANGE_ME_vector_db_url#http://vdbtest:60000#; s/CHANGE_ME_vector_db_user/u/; s/CHANGE_ME_vector_db_pwd/p/' deploy/app/.env
 sed -i -E 's/CHANGE_ME_random_hex_64/1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff/; s/CHANGE_ME_admin@example.com/admin@example.com/' deploy/edge/.env

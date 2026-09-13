@@ -1,13 +1,13 @@
-# ECHO-CHAT 公网 tunnel 部署 — 仓库落地 spec（rev2）
+# AnswerMesh 公网 tunnel 部署 — 仓库落地 spec（rev2）
 
-> 日期：2026-09-05（rev2：按 `2026-09-05-echo-chat-tunnel-repository-spec-review.md` 修订，合入 P0-1~4 + P1 选定项）
-> 主方案（权威，含真实 VM 操作/§7-14）：`docs/deploy/2026-09-05-echo-chat-tunnel-vm-public-deployment-design.md`
-> 评审文档：`tmp/t1/2026-09-05-echo-chat-tunnel-repository-spec-review.md`（未入仓库；要点已合入本 spec 结论）
+> 日期：2026-09-05（rev2：按 `2026-09-05-answermesh-tunnel-repository-spec-review.md` 修订，合入 P0-1~4 + P1 选定项）
+> 主方案（权威，含真实 VM 操作/§7-14）：`docs/deploy/2026-09-05-answermesh-tunnel-vm-public-deployment-design.md`
+> 评审文档：`tmp/t1/2026-09-05-answermesh-tunnel-repository-spec-review.md`（未入仓库；要点已合入本 spec 结论）
 > 本 spec 定义**本仓库内可静态交付的改动子集**。真实公网 VM/DNS/证书执行由部署者按脚本在目标环境完成。
 
 ## 1. 背景与目标
 
-把 ECHO-CHAT Docker 全栈安全暴露公网：公网入口 Nginx(80/443) → frps → frpc → `127.0.0.1:7080`。本次在 ECHO-CHAT（main）内新增 `deploy/` 制品 + compose 收紧 + 配置模板化 + backend 健康检查/可信代理改动，使主方案可直接执行。
+把 AnswerMesh Docker 全栈安全暴露公网：公网入口 Nginx(80/443) → frps → frpc → `127.0.0.1:7080`。本次在 AnswerMesh（main）内新增 `deploy/` 制品 + compose 收紧 + 配置模板化 + backend 健康检查/可信代理改动，使主方案可直接执行。
 
 评审结论为**有条件通过**：修订本 spec 的 4 个 P0 后进入实现。本 rev2 逐条落实。
 
@@ -33,9 +33,9 @@
 ### P0-2：TLS 首次启动闭环（两阶段 Nginx）
 
 - 证书目录 `/etc/letsencrypt/live/<domain>/` 不存在时，Nginx 不能以引用不存在的 ssl 证书启动 → 死锁。
-- 新增**两个** Nginx 模板（同一挂载点 `deploy/edge/nginx/echo-chat.conf`，脚本按阶段写入再 reload，进程不重启、80 端口全程在线）：
-  - `deploy/edge/nginx/echo-chat.bootstrap.conf.envsubst`：仅 80 —— `.well-known/acme-challenge/` + 兜底 503。
-  - `deploy/edge/nginx/echo-chat.conf.envsubst`：80(acme+301→https) + 443 正式流式配置。
+- 新增**两个** Nginx 模板（同一挂载点 `deploy/edge/nginx/answermesh.conf`，脚本按阶段写入再 reload，进程不重启、80 端口全程在线）：
+  - `deploy/edge/nginx/answermesh.bootstrap.conf.envsubst`：仅 80 —— `.well-known/acme-challenge/` + 兜底 503。
+  - `deploy/edge/nginx/answermesh.conf.envsubst`：80(acme+301→https) + 443 正式流式配置。
 - `deploy-edge.sh` 流程：
   1. 渲染并启动 frps；
   2. 证书已存在 → 直接写正式 conf → `nginx -t` → reload → 验收；
@@ -97,8 +97,8 @@ deploy/
 │   ├── .env.example                      # PUBLIC_DOMAIN/ADMIN_EMAIL/FRP_AUTH_TOKEN/FRP_DASHBOARD_PASSWORD/镜像
 │   ├── tunnel/frps.yaml.envsubst         # 主方案 §5.3 同款
 │   └── nginx/
-│       ├── echo-chat.bootstrap.conf.envsubst   # P0-2 HTTP 引导
-│       └── echo-chat.conf.envsubst             # P0-2/P0-3 正式流式 HTTPS（XFF 覆盖）
+│       ├── answermesh.bootstrap.conf.envsubst   # P0-2 HTTP 引导
+│       └── answermesh.conf.envsubst             # P0-2/P0-3 正式流式 HTTPS（XFF 覆盖）
 └── scripts/
     ├── lib.sh                            # source-env/受限 envsubst/原子写/必填守卫/残留检查/一致性校验/预检/日志
     ├── render-config.sh                  # {app|edge} 幂等渲染（P0-1/P1-7）
@@ -108,7 +108,7 @@ deploy/
     └── scan-secrets.sh                   # P1-6
 ```
 
-渲染产物（gitignore）：`.env`（app/edge）、`docker/config/{backend,service}.yaml`、`deploy/app/tunnel/frpc.yaml`、`deploy/edge/tunnel/frps.yaml`、`deploy/edge/nginx/echo-chat.conf`。
+渲染产物（gitignore）：`.env`（app/edge）、`docker/config/{backend,service}.yaml`、`deploy/app/tunnel/frpc.yaml`、`deploy/edge/tunnel/frps.yaml`、`deploy/edge/nginx/answermesh.conf`。
 
 ### 4.2 `docker/config/` 模板化
 
@@ -150,7 +150,7 @@ deploy/
 
 ## 7. 文档落位与提交
 
-- 主方案：`docs/deploy/2026-09-05-echo-chat-tunnel-vm-public-deployment-design.md`（已提交）
-- 本 spec（rev2）：`docs/superpowers/specs/2026-09-05-echo-chat-tunnel-vm-public-deployment-design.md`
-- 后续实施计划：`docs/superpowers/plans/2026-09-05-echo-chat-tunnel-vm-public-deployment.md`（writing-plans）
+- 主方案：`docs/deploy/2026-09-05-answermesh-tunnel-vm-public-deployment-design.md`（已提交）
+- 本 spec（rev2）：`docs/superpowers/specs/2026-09-05-answermesh-tunnel-vm-public-deployment-design.md`
+- 后续实施计划：`docs/superpowers/plans/2026-09-05-answermesh-tunnel-vm-public-deployment.md`（writing-plans）
 - 提交范围：上述改动；**不得包含**未提交的 `openai-api-proxy/dev.config.yaml`（本地真实 key）

@@ -1,6 +1,6 @@
-# ECHO-CHAT 公网 HTTPS 正式配置（渲染产物）。模板变量仅 PUBLIC_DOMAIN / FRP_VHOST_HTTP_PORT。
+# AnswerMesh 公网 HTTPS 正式配置（渲染产物）。模板变量仅 PUBLIC_DOMAIN / FRP_VHOST_HTTP_PORT。
 # 与主方案 §5.6 的有意差异：X-Forwarded-For 用 $remote_addr 覆盖，杜绝外部伪造链首(评审 P0-3)。
-limit_req_zone $binary_remote_addr zone=echo_api:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=answermesh_api:10m rate=10r/s;
 
 server {
     listen 80;
@@ -47,7 +47,7 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
 
     location /api/ {
-        limit_req zone=echo_api burst=30 nodelay;
+        limit_req zone=answermesh_api burst=30 nodelay;
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -57,7 +57,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Connection "";
 
-        # ECHO-CHAT 流式响应：禁止一切缓冲。
+        # AnswerMesh 流式响应：禁止一切缓冲。
         proxy_buffering off;
         proxy_cache off;
         gzip off;

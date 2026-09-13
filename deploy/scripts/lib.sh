@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ECHO-CHAT deploy 共享函数。source 本文件后使用。
+# AnswerMesh deploy 共享函数。source 本文件后使用。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -110,9 +110,9 @@ check_consistency() {
         || die "frps bindPort != FRP_BIND_PORT"
       grep -q "vhostHTTPPort: ${FRP_VHOST_HTTP_PORT:-}" "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml" \
         || die "frps vhostHTTPPort != FRP_VHOST_HTTP_PORT"
-      grep -q "server_name ${PUBLIC_DOMAIN:-};" "${REPO_ROOT}/deploy/edge/nginx/echo-chat.conf" \
+      grep -q "server_name ${PUBLIC_DOMAIN:-};" "${REPO_ROOT}/deploy/edge/nginx/answermesh.conf" \
         || die "nginx server_name != PUBLIC_DOMAIN"
-      grep -q "proxy_pass http://127.0.0.1:${FRP_VHOST_HTTP_PORT:-}" "${REPO_ROOT}/deploy/edge/nginx/echo-chat.conf" \
+      grep -q "proxy_pass http://127.0.0.1:${FRP_VHOST_HTTP_PORT:-}" "${REPO_ROOT}/deploy/edge/nginx/answermesh.conf" \
         || die "nginx upstream != FRP_VHOST_HTTP_PORT"
       ;;
   esac

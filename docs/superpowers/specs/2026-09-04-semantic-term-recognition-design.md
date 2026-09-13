@@ -1,9 +1,9 @@
-# ECHO-CHAT 语义检索 · Phase 1.5：术语实体识别与受控概念扩展 设计文档
+# AnswerMesh 语义检索 · Phase 1.5：术语实体识别与受控概念扩展 设计文档
 
 - 日期：2026-09-04
 - 状态：已批准（吸收评审 P0/P1 修订后）
-- 位置：ECHO-CHAT `semantic/`（ontology 实体化 + 变体折叠 loader + `lang_terms.json` 语言实体表 + parse 术语解析 + 版本隔离）
-- 关联：`proj/tmp/ECHO-CHAT术语识别扩展迭代方案评审意见.md`（评审，有条件批准）、`docs/superpowers/specs/2026-09-03-semantic-phase1-rule-alias-design.md`、`2026-09-04-semantic-phase2-3-e5-hybrid-design.md`
+- 位置：AnswerMesh `semantic/`（ontology 实体化 + 变体折叠 loader + `lang_terms.json` 语言实体表 + parse 术语解析 + 版本隔离）
+- 关联：`proj/tmp/AnswerMesh术语识别扩展迭代方案评审意见.md`（评审，有条件批准）、`docs/superpowers/specs/2026-09-03-semantic-phase1-rule-alias-design.md`、`2026-09-04-semantic-phase2-3-e5-hybrid-design.md`
 
 > **定位**：本阶段只做"术语**实体**识别与受控概念扩展"，**不把'识别相近'直接推导为'可共享缓存答案'**。答案可共享与否仍由实体边界、意图、操作、类型参数与硬约束共同决定。语义指纹**只对 `alias_of` 合并**。
 

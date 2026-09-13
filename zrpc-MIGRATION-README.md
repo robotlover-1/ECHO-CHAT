@@ -1,10 +1,10 @@
-# ECHO-CHAT gRPC → 自研 C zrpc v2 迁移 · 交付说明
+# AnswerMesh gRPC → 自研 C zrpc v2 迁移 · 交付说明
 
 状态：**迁移完成，gRPC 传输已删，全链路仅自研 zrpc v2**。详见 `docs/zrpc-migration/01..12`。
 
 ## 迁移内容
 
-用自研 **C zrpc v2 + NtyCo + cgo bridge** 替换 ECHO-CHAT 4 条 gRPC 调用，业务逻辑零改动：
+用自研 **C zrpc v2 + NtyCo + cgo bridge** 替换 AnswerMesh 4 条 gRPC 调用，业务逻辑零改动：
 
 | 链路 | 原 gRPC | 现 zrpc method（`zrpc-go/contract`） |
 |---|---|---|

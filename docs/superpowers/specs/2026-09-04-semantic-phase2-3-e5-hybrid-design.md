@@ -1,9 +1,9 @@
-# ECHO-CHAT 语义检索 Phase 2+3（合并）：E5 Dense 语义检索与结构化规则融合 设计文档
+# AnswerMesh 语义检索 Phase 2+3（合并）：E5 Dense 语义检索与结构化规则融合 设计文档
 
 - 日期：2026-09-04
 - 状态：已批准（吸收评审 P0/P1 修订后）
-- 位置：ECHO-CHAT（`semantic/` 模型封装 + kvstore 子模块 VSEARCH 前缀参数 + Go semcache 重构为"一次编码/纯规则决策/复用 VSEARCH 余弦"）
-- 关联：`proj/tmp/ECHO-CHAT语义检索高命中率改造方案.md`（远景）、`proj/tmp/ECHO-CHAT语义检索Phase2-3合并方案评审.md`（本设计评审，有条件批准）、`docs/superpowers/specs/2026-09-03-semantic-phase1-rule-alias-design.md`（Phase 1，已完成）
+- 位置：AnswerMesh（`semantic/` 模型封装 + kvstore 子模块 VSEARCH 前缀参数 + Go semcache 重构为"一次编码/纯规则决策/复用 VSEARCH 余弦"）
+- 关联：`proj/tmp/AnswerMesh语义检索高命中率改造方案.md`（远景）、`proj/tmp/AnswerMesh语义检索Phase2-3合并方案评审.md`（本设计评审，有条件批准）、`docs/superpowers/specs/2026-09-03-semantic-phase1-rule-alias-design.md`（Phase 1，已完成）
 
 > **命名澄清**：本文的"融合检索"指 **语义指纹 + Dense(E5) 向量召回 + 结构化规则硬门** 三层融合；**不含** Dense+Sparse(BM25) 混合检索，也不含独立 Cross-Encoder 重排（均为显式 Out of scope）。
 
@@ -148,7 +148,7 @@ def encode_passage(text) -> list[float]:
   - query_vec 字节数 == `dim*4`；
   - 允许前缀集：`semcache:`、`semd:e5s:v1:`（常量表；超集拒绝）。
 - 测试：老三参兼容、新四参、空前缀/非法参数、前缀索引隔离、384 与 256 记录混存（dim 不一致记录被 parse_vec 跳过，不误扫）、边界单元（含 ASan 若环境允许）。
-- 子模块独立提交 → ECHO-CHAT bump 指针 → 重编 `kvstore/kvstore/kvstore`。
+- 子模块独立提交 → AnswerMesh bump 指针 → 重编 `kvstore/kvstore/kvstore`。
 
 ### ⑥ Go `semcache`：一次编码 / 纯规则 / 复用 VSEARCH 分数
 
@@ -254,7 +254,7 @@ semantic_runtime:
 - `semantic/tools/export_e5_onnx.py`（一次性导出+INT8+MANIFEST，torch 仅此处）
 - `semantic/tools/calibrate.py`（三分切分+阈值选择+bootstrap）
 - `semantic/tests/test_models.py`、`semantic/tests/test_soft_fallback.py`、`semantic/tests/` 检索质量集（新增 fixtures）
-- kvstore 子模块：VSEARCH 前缀参数+校验（`src/storage/kvs_vector.c`、命令分发、C 测试）+ ECHO-CHAT bump 指针
+- kvstore 子模块：VSEARCH 前缀参数+校验（`src/storage/kvs_vector.c`、命令分发、C 测试）+ AnswerMesh bump 指针
 
 修改：
 - `semantic/embedding.py`（→models.encode_query）、`semantic/decision.py`（hard_decide 纯规则 + critical 约束 + semantic_soft_match）、`semantic/semantic.py`（/v1/decision[/batch]、/healthz /readyz /model-info、warmup）、`semantic/requirements.txt`（onnxruntime/tokenizers/numpy）、`semantic/Dockerfile`(slim+COPY models+启动参数)、`semantic/README.md`

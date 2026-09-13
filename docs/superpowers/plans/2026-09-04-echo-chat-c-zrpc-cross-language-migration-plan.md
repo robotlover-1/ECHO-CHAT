@@ -1,11 +1,11 @@
-# ECHO-CHAT 基于 C zrpc 的跨语言 RPC 改造实施方案
+# AnswerMesh 基于 C zrpc 的跨语言 RPC 改造实施方案
 
 - 日期：2026-09-04
 - 状态：实施设计稿
-- 目标仓库：[`robotlover-1/ECHO-CHAT`](https://github.com/robotlover-1/ECHO-CHAT)
+- 目标仓库：[`robotlover-1/Answermesh`](https://github.com/robotlover-1/Answermesh)
 - 代码基线：`main@ddc9447014e391448783223b36723811a594de71`
 - 参考源码：`zrpc-main.zip`（C zrpc + cJSON + NtyCo）
-- 核心目标：以 C zrpc 作为协议编解码与 TCP 通信核心，通过 cgo 接入 Go，完成 ECHO-CHAT 三条 gRPC 链路的跨语言替换
+- 核心目标：以 C zrpc 作为协议编解码与 TCP 通信核心，通过 cgo 接入 Go，完成 AnswerMesh 三条 gRPC 链路的跨语言替换
 
 ## 1. 项目目标与边界
 
@@ -84,7 +84,7 @@ flowchart TD
 在仓库根目录新增：
 
 ```text
-ECHO-CHAT/
+AnswerMesh/
 ├── third_party/
 │   └── zrpc/
 │       ├── LICENSE-NOTICE.md
@@ -132,7 +132,7 @@ ECHO-CHAT/
 
 原则：
 
-- C 层只负责协议、socket、连接生命周期和回调触发，不感知 ECHO-CHAT 业务结构。
+- C 层只负责协议、socket、连接生命周期和回调触发，不感知 AnswerMesh 业务结构。
 - Go bridge 负责 JSON 序列化、context、handler 注册、channel 和错误映射。
 - 业务 contract 只保留一份，backend、chat-service、keywords-filter 共同依赖。
 - C 层永远不保存 Go 指针，只保存无符号整数 handle。
@@ -576,7 +576,7 @@ type FindAllResponse struct {
 
 迁移观察期内保留 `.proto` 文件作为兼容基线；完成对比后再删除生成代码。
 
-## 8. ECHO-CHAT 逐模块改造
+## 8. AnswerMesh 逐模块改造
 
 ### 8.1 keywords-filter
 

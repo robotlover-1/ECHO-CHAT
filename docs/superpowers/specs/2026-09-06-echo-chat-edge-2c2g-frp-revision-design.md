@@ -1,13 +1,13 @@
-# ECHO-CHAT 边缘 2核2G FRP 部署修订 —— spec（rev2）
+# AnswerMesh 边缘 2核2G FRP 部署修订 —— spec（rev2）
 
-> 日期：2026-09-06（rev2：按 `tmp/t1/2026-09-06-echo-chat-edge-2c2g-frp-revision-review.md` 合入 P0-1~4 + P1-1~8）
-> 主方案（权威）：`docs/deploy/2026-09-06-echo-chat-direct-public-deployment-and-tunnel-removal.md`（**新增归档，不改写原文**）
+> 日期：2026-09-06（rev2：按 `tmp/t1/2026-09-06-answermesh-edge-2c2g-frp-revision-review.md` 合入 P0-1~4 + P1-1~8）
+> 主方案（权威）：`docs/deploy/2026-09-06-answermesh-direct-public-deployment-and-tunnel-removal.md`（**新增归档，不改写原文**）
 > 目标分支：`fix/edge-2c2g-frp-deployment`；基线 `main@4022ad0`
 > 评审结论：**有条件通过**；完成 4 项 P0 + P1 后实施，真实 2核2G + 端到端验收后合入 main/上线。
 
 ## 1. 架构结论（不变）
 
-固定 FRP 双节点不回退：公网 2核2G 云主机只跑 `frps + Nginx + Certbot`；本地跑完整 `ECHO-CHAT + frpc`（`127.0.0.1:7080` 主动连云端 `39000`）。
+固定 FRP 双节点不回退：公网 2核2G 云主机只跑 `frps + Nginx + Certbot`；本地跑完整 `AnswerMesh + frpc`（`127.0.0.1:7080` 主动连云端 `39000`）。
 
 ## 2. P0 修订决策
 
@@ -21,7 +21,7 @@
 - 另加宿主机 TCP 就绪等待 `wait_tcp <host> <port> <secs>`（bash `/dev/tcp`，不依赖镜像内工具）：frps 起后等 `127.0.0.1:${FRP_BIND_PORT}`；nginx bootstrap 起后等 `80`；全量 HTTPS 路径等 `443`。
 
 ### P0-3 HTTPS 自检确定性（新增 `/edge-healthz` + 状态码分类）
-- `deploy/edge/nginx/echo-chat.conf.envsubst` 的 443 server（及 80 server）加：
+- `deploy/edge/nginx/answermesh.conf.envsubst` 的 443 server（及 80 server）加：
   ```nginx
   location = /edge-healthz {
       access_log off;
@@ -36,8 +36,8 @@
      ```bash
      code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${PUBLIC_DOMAIN}/api/health" 2>/dev/null) || code=000
      case "$code" in
-       200)   info "ECHO-CHAT 链路已连通" ;;
-       502|503|504) info "edge 正常；本地 frpc/ECHO-CHAT 未就绪，frpc 上线后跑 smoke-test edge" ;;
+       200)   info "AnswerMesh 链路已连通" ;;
+       502|503|504) info "edge 正常；本地 frpc/AnswerMesh 未就绪，frpc 上线后跑 smoke-test edge" ;;
        000)   die "HTTPS 连接失败" ;;
        *)     die "HTTPS 返回非预期状态 ${code}，检查 Nginx 路由" ;;
      esac
@@ -70,7 +70,7 @@
 |---|---|---|
 | 1 | `deploy/edge/tunnel/frps.yaml.envsubst` | transport 加 `tls.force: true`；auth 加 `additionalScopes`；删 `webServer:` 块(注释说明按需加回且只绑回环) |
 | 2 | `deploy/app/tunnel/frpc.yaml.envsubst` | auth 加 `additionalScopes`（tls.enable 已 true） |
-| 3 | `deploy/edge/nginx/echo-chat.conf.envsubst` | 443/80 server 加 `location = /edge-healthz` |
+| 3 | `deploy/edge/nginx/answermesh.conf.envsubst` | 443/80 server 加 `location = /edge-healthz` |
 | 4 | `deploy/scripts/deploy-edge.sh` | 预检 `1536 20480`；加 `assert_service_running`+`wait_tcp`；起 frps/nginx 后就绪等待；frps verify(best-effort, bind-mount)；结尾拆 TLS 自检(`/edge-healthz`)与业务码分类(200/502,503,504/000/*) |
 | 5 | `deploy/scripts/deploy-app.sh` | frpc verify 改为 bind-mount `frpc.yaml`（修复 no-op） |
 | 6 | `deploy/edge/compose.yaml` | 删 `127.0.0.1:7500:7500`；frps/nginx 各加 `logging 20m×3` |
@@ -83,8 +83,8 @@
 
 ## 5. 文档与提交（数量精确）
 分支 `fix/edge-2c2g-frp-deployment` 上共三类提交文件：
-- 新增归档：`docs/deploy/2026-09-06-echo-chat-direct-public-deployment-and-tunnel-removal.md`（1，已入 bea584f）
-- 本 spec：`docs/superpowers/specs/2026-09-06-echo-chat-edge-2c2g-frp-revision-design.md`（1，rev2 修订）
+- 新增归档：`docs/deploy/2026-09-06-answermesh-direct-public-deployment-and-tunnel-removal.md`（1，已入 bea584f）
+- 本 spec：`docs/superpowers/specs/2026-09-06-answermesh-edge-2c2g-frp-revision-design.md`（1，rev2 修订）
 - 实现文件：上表 10 个
 提交形态：spec 单独提交；实现为一个 `fix(deploy): adapt FRP edge deployment for 2c2g server` 提交（或按 reviewer §6 顺序拆 2 提交：a 模板/安全/自检，b smoke/README/收口）。push 分支，不动 main。
 

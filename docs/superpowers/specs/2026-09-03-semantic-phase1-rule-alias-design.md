@@ -1,9 +1,9 @@
-# ECHO-CHAT 语义检索 Phase 1：高精度规则与别名体系设计文档
+# AnswerMesh 语义检索 Phase 1：高精度规则与别名体系设计文档
 
 - 日期：2026-09-03
 - 状态：已批准（吸收评审意见修订后）
-- 位置：ECHO-CHAT monorepo（`semantic/` 服务内模块化 + Go `semcache.go` 指纹候选前置 + Top-K 提升）
-- 关联：`proj/tmp/ECHO-CHAT语义检索高命中率改造方案.md`（远景）、`proj/tmp/ECHO-CHAT语义服务解耦方案评审与修改建议 (1).md`、`proj/tmp/ECHO-CHAT语义检索Phase1规则与别名方案评审.md`（本设计评审，有条件批准）、`docs/superpowers/specs/2026-09-03-semantic-service-decouple-design.md`（Phase 0，已完成）
+- 位置：AnswerMesh monorepo（`semantic/` 服务内模块化 + Go `semcache.go` 指纹候选前置 + Top-K 提升）
+- 关联：`proj/tmp/AnswerMesh语义检索高命中率改造方案.md`（远景）、`proj/tmp/AnswerMesh语义服务解耦方案评审与修改建议 (1).md`、`proj/tmp/AnswerMesh语义检索Phase1规则与别名方案评审.md`（本设计评审，有条件批准）、`docs/superpowers/specs/2026-09-03-semantic-service-decouple-design.md`（Phase 0，已完成）
 
 ## 背景与目标
 

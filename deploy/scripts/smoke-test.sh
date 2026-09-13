@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ECHO-CHAT 公网隧道分层验收（主方案 §9）。层数越低越先验证。
+# AnswerMesh 公网隧道分层验收（主方案 §9）。层数越低越先验证。
 # 用法:
 #   bash smoke-test.sh app                              # 应用节点本地 7080
 #   bash smoke-test.sh edge                             # 入口节点: frps host 路由 + https

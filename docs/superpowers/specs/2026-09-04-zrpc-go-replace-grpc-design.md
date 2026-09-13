@@ -1,15 +1,15 @@
-# ECHO-CHAT gRPC 换 zrpc-Go：自研 RPC 替换 gRPC 设计文档（v2）
+# AnswerMesh gRPC 换 zrpc-Go：自研 RPC 替换 gRPC 设计文档（v2）
 
 - 日期：2026-09-04
 - 状态：**有条件通过（P0 修订已完成，可进入实施规划）**
-- 位置：ECHO-CHAT monorepo（`t1/ECHO-CHAT`）
+- 位置：AnswerMesh monorepo（`t1/AnswerMesh`）
 - 参考：`proj/tmp/zrpc-main.zip`（C 版 zrpc 教学骨架——只借"注册式方法表 + CRC/长度帧 + JSON"的思想，**不移植代码、不与之互操作**；C 源码无许可证，Go 实现独立编写）
 - 评审：`proj/tmp/t1/2026-09-04-zrpc-go-replace-grpc-review.md`（本版已吸收）
 - 关联：`docs/superpowers/specs/` 系列既有 spec
 
 ## 背景、动机与决策门槛
 
-ECHO-CHAT 三个独立 Go 模块经 gRPC 互连：ai-chat-backend → ai-chat-service（unary + 服务端流式）、ai-chat-service → keywords-filter（两类 unary）。本任务以**自研 Go RPC** 替换这三条链路。zrpc 仅作设计参考（帧 + 注册式方法表），**非**字节互操作目标。
+AnswerMesh 三个独立 Go 模块经 gRPC 互连：ai-chat-backend → ai-chat-service（unary + 服务端流式）、ai-chat-service → keywords-filter（两类 unary）。本任务以**自研 Go RPC** 替换这三条链路。zrpc 仅作设计参考（帧 + 注册式方法表），**非**字节互操作目标。
 
 动机定位为**学习 + 通信栈自主可控**（非延迟/吞吐类性能诉求）。因此设定决策门槛（阶段 0）：先建 gRPC 基线并定义收益目标；若自研实现无可测收益且无自主可控诉求，则保留 gRPC。允许以"受控试点 + 双栈可回退"方式推进，不直接全量删除 gRPC。
 
@@ -25,7 +25,7 @@ ECHO-CHAT 三个独立 Go 模块经 gRPC 互连：ai-chat-backend → ai-chat-se
 | D4 | 代码组织 | 共享 `rpc/` 模块（独立 go.mod）；dev 用 `replace => ../rpc`；**镜像/CI 用仓库根 build context 或发布固定版本** |
 | D5 | 并发模型 | **v1：unary 走长连接池多路复用；chat 流独占连接**（消除取消/队头阻塞冲突）；全多路复用留作后续有性能证据再上 |
 | D6 | 交付方式 | **双栈灰度**：transport 可配置（grpc/zrpc），先 filter unary → chat unary → chat stream 逐链路切换，观察期后删 gRPC |
-| D7 | 目标副本 | `t1/ECHO-CHAT` |
+| D7 | 目标副本 | `t1/AnswerMesh` |
 
 ## 评审修订记录（2026-09-04）
 

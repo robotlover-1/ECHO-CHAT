@@ -155,7 +155,7 @@ third_party/zrpc/tests/bin/
 # 本机双栈测试临时配置（勿提交）
 dev.ztest.yaml
 # ============================================
-# ECHO-CHAT 公网部署：渲染产物与密钥（勿提交）
+# AnswerMesh 公网部署：渲染产物与密钥（勿提交）
 # ============================================
 docker/config/backend.yaml
 docker/config/service.yaml
@@ -163,4 +163,4 @@ deploy/app/.env
 deploy/edge/.env
 deploy/app/tunnel/frpc.yaml
 deploy/edge/tunnel/frps.yaml
-deploy/edge/nginx/echo-chat.conf
+deploy/edge/nginx/answermesh.conf

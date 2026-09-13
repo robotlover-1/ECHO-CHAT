@@ -13,7 +13,7 @@ ADD ./models.py /app
 ADD ./decision.py /app
 ADD ./ontology /app/ontology
 # 模型工件（gitignored，不在仓库）：构建期从 GitHub Release 下载 + sha256 校验（MODEL_URL 可覆盖）
-ARG MODEL_URL=https://github.com/robotlover-1/ECHO-CHAT/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz
+ARG MODEL_URL=https://github.com/robotlover-1/Answermesh/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz
 RUN mkdir -p /app/models/e5s-v1 && \
     curl -fsSL --retry 3 --connect-timeout 15 -o /tmp/e5s.tar.gz "$MODEL_URL" && \
     tar -xzf /tmp/e5s.tar.gz -C /app/models/e5s-v1 --strip-components=1 && \

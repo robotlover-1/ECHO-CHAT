@@ -1,12 +1,11 @@
 {
-  "name": "chatgpt-web",
+  "name": "answermesh-web",
   "version": "2.10.8",
   "private": false,
-  "description": "零声教学AI助手",
+  "description": "AnswerMesh — 零声教学AI助手",
   "author": "ChenZhaoYu <chenzhaoyu1994@gmail.com>",
   "keywords": [
-    "chatgpt-web",
-    "chatgpt",
+    "answermesh",
     "chatbot",
     "vue"
   ],

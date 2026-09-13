@@ -1,21 +1,21 @@
-# ECHO-CHAT 基于 FRP 的内网穿透与公网部署 —— 技术路线与项目迭代
+# AnswerMesh 基于 FRP 的内网穿透与公网部署 —— 技术路线与项目迭代
 
 > 日期：2026-09-06
-> 适用：`robotlover-1/ECHO-CHAT`（main）
-> 本文讲清三件事：① 怎么用 FRP 把"只跑在本地的完整 ECHO-CHAT"安全暴露到公网；② FRP 在本项目里具体怎么配置/运转；③ 对原项目做了哪些迭代（仓库结构、配置模板化、后端最小改动、安全收紧、部署脚本），并附流程图与关键代码。
+> 适用：`robotlover-1/Answermesh`（main）
+> 本文讲清三件事：① 怎么用 FRP 把"只跑在本地的完整 AnswerMesh"安全暴露到公网；② FRP 在本项目里具体怎么配置/运转；③ 对原项目做了哪些迭代（仓库结构、配置模板化、后端最小改动、安全收紧、部署脚本），并附流程图与关键代码。
 
 ---
 
 ## 1. 为什么需要"内网穿透"，为什么选 FRP
 
-ECHO-CHAT 是一个**全栈单体服务群**：Go 后端（ai-chat-backend/ai-chat-service/zrpc）、tokenizer、semantic、kvstore、proxy、MySQL、向量库等，通常跑在**本地或内网机器**上，监听 `127.0.0.1:7080`。它没有公网 IP / 路由器端口映射，公网用户进不来。
+AnswerMesh 是一个**全栈单体服务群**：Go 后端（ai-chat-backend/ai-chat-service/zrpc）、tokenizer、semantic、kvstore、proxy、MySQL、向量库等，通常跑在**本地或内网机器**上，监听 `127.0.0.1:7080`。它没有公网 IP / 路由器端口映射，公网用户进不来。
 
 要对外提供访问，候选路线有三条：
 
 | 路线 | 结论 | 原因 |
 |---|---|---|
 | 完整 tunnel 多用户管理平台（`11.3-tunnel-master`） | **不采用** | 它本质是 FRP 上层多租户平台：Web/API、K8s、动态分配子域、DNS 自动化、MySQL/Redis 状态库。本项目只有一个固定应用、固定域名，用不到，徒增复杂度与攻击面 |
-| 把 ECHO-CHAT 整体部署到 2核2G 云服务器 | **不采用** | 资源不够（语义模型、MySQL、多服务），且 2C2G 只该当"入口" |
+| 把 AnswerMesh 整体部署到 2核2G 云服务器 | **不采用** | 资源不够（语义模型、MySQL、多服务），且 2C2G 只该当"入口" |
 | **轻量固定 FRP：云上只跑 frps+Nginx，本地跑 frpc** | ✅ **采用** | 复用 FRP 底层能力，不部署管理平台；本地无公网 IP 也能主动上连 |
 
 ```mermaid
@@ -23,7 +23,7 @@ flowchart LR
     U[公网用户] -->|"https://answermesh.xyz:443"| NG["Nginx TLS/限流/流式"]
     NG -->|"http 127.0.0.1:39001 frps HTTP vhost"| FRPS[frps]
     FRPS -->|"FRP 隧道 39000/TCP, frpc 主动上行"| FRPC[frpc]
-    FRPC -->|"http 127.0.0.1:7080"| E["完整 ECHO-CHAT"]
+    FRPC -->|"http 127.0.0.1:7080"| E["完整 AnswerMesh"]
     subgraph cloud["公网云服务器 华东2-上海 2C2G"]
         NG
         FRPS
@@ -54,7 +54,7 @@ sequenceDiagram
     participant U as 公网浏览器
     frpc->>frps: TCP 39000 登录(token+TLS+additionalScopes)
     frps-->>frpc: login success (run id)
-    frpc->>frps: 注册代理 echo-chat(customDomains=answermesh.xyz→127.0.0.1:7080)
+    frpc->>frps: 注册代理 answermesh(customDomains=answermesh.xyz→127.0.0.1:7080)
     U->>NG: GET /api/chat-process (443)
     NG->>NG: 流式代理: buffering off
     NG->>frps: HTTP vhost 39001, Host: answermesh.xyz
@@ -80,10 +80,10 @@ transport:
   tls:
     enable: true                                 # 客户端启用 TLS
 proxies:
-  - name: echo-chat
+  - name: answermesh
     type: http
     localIP: 127.0.0.1
-    localPort: 7080                              # 本机 ECHO-CHAT
+    localPort: 7080                              # 本机 AnswerMesh
     customDomains:
       - "${PUBLIC_DOMAIN}"                        # answermesh.xyz
 ```
@@ -115,7 +115,7 @@ flowchart LR
     C --> D["frps HTTP vhost 命中 customDomains=answermesh.xyz"]
     D --> E["FRP 工作连接(经 39000 控制通道复用 tcpMux)"]
     E --> F["本地 frpc"]
-    F --> G["本地 127.0.0.1:7080 ECHO-CHAT"]
+    F --> G["本地 127.0.0.1:7080 AnswerMesh"]
     G -.->|"逐帧 NDJSON 回流"| A
 ```
 
@@ -134,9 +134,9 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A["本地: ./start.sh 或 docker compose 跑起 ECHO-CHAT"] --> B["127.0.0.1:7080 可访问"]
+    A["本地: ./start.sh 或 docker compose 跑起 AnswerMesh"] --> B["127.0.0.1:7080 可访问"]
     B --> C["frpc 渲染+启动 (deploy-app.sh / 手工二进制)"]
-    C --> D["登录云端 frps 成功, 代理 echo-chat 注册"]
+    C --> D["登录云端 frps 成功, 代理 answermesh 注册"]
     D --> E["云 edge: deploy-edge.sh"]
     E --> F["frps+Nginx 起, 证书就绪, HTTPS 全量"]
     F --> G["分层验收 L1→L4"]
@@ -209,7 +209,7 @@ deploy/
 │   ├── compose.yaml           # frps + nginx(host 网络) + 日志轮转
 │   ├── .env.example
 │   ├── tunnel/frps.yaml.envsubst
-│   └── nginx/{echo-chat.bootstrap.conf, echo-chat.conf}.envsubst
+│   └── nginx/{answermesh.bootstrap.conf, answermesh.conf}.envsubst
 └── scripts/
     ├── lib.sh                 # 安全 .env 加载/受限 envsubst/必填守卫/原子写/stream_frame_count
     ├── render-config.sh app|edge
@@ -263,7 +263,7 @@ func NewEngine(configured []string) (*gin.Engine, error) {
 curl -fsS --max-time 15 "https://${PUBLIC_DOMAIN}/edge-healthz" >/dev/null || die "DNS/TLS/Nginx 自检失败"
 code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${PUBLIC_DOMAIN}/api/health" 2>/dev/null)" || code=000
 case "$code" in
-  200)            info "ECHO-CHAT 链路已连通" ;;
+  200)            info "AnswerMesh 链路已连通" ;;
   502|503|504)    info "edge 正常; 本地未就绪(frpc 上线后再测)" ;;
   000)            die "HTTPS 连接失败" ;;
   *)              die "非预期状态 ${code}, 查 Nginx 路由" ;;
@@ -286,9 +286,9 @@ esac
 
 整个迭代按 **brainstorming(spec) → writing-plans(计划) → subagent-driven(执行+逐任务评审) → whole-branch 终审** 推进；中间插入外部评审（两轮 P0/P1），逐条修订 spec。相关文档：
 
-- 主方案归档：`docs/deploy/2026-09-05-echo-chat-tunnel-vm-public-deployment-design.md`、`docs/deploy/2026-09-06-echo-chat-direct-public-deployment-and-tunnel-removal.md`
-- spec：`docs/superpowers/specs/2026-09-05-*`、`docs/superpowers/specs/2026-09-06-echo-chat-edge-2c2g-frp-revision-design.md`
-- 计划：`docs/superpowers/plans/2026-09-05-*`、`docs/superpowers/plans/2026-09-06-echo-chat-edge-2c2g-frp-revision.md`
+- 主方案归档：`docs/deploy/2026-09-05-answermesh-tunnel-vm-public-deployment-design.md`、`docs/deploy/2026-09-06-answermesh-direct-public-deployment-and-tunnel-removal.md`
+- spec：`docs/superpowers/specs/2026-09-05-*`、`docs/superpowers/specs/2026-09-06-answermesh-edge-2c2g-frp-revision-design.md`
+- 计划：`docs/superpowers/plans/2026-09-05-*`、`docs/superpowers/plans/2026-09-06-answermesh-edge-2c2g-frp-revision.md`
 
 ---
 
@@ -306,7 +306,7 @@ esac
 
 ## 6. 落地建议（后续）
 
-- 本地 frpc 用 systemd 托管自启；ECHO-CHAT 放到常开、上行好的机器；
+- 本地 frpc 用 systemd 托管自启；AnswerMesh 放到常开、上行好的机器；
 - 给 certbot 加 renew 后自动 `nginx -s reload` 的 hook（README 有模板）；
 - 大陆公网：等 ICP 或把入口移到境外节点；
 - 彻底生产化前可把镜像固定 digest、加 Prometheus/告警（见 spec 的 follow-up）。

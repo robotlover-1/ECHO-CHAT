@@ -273,7 +273,7 @@ Create `semantic/README.md`：
 ```markdown
 # semantic（语义检索独立服务）
 
-承接 ECHO-CHAT 语义缓存的向量生成与规则校验，与 tokenizer（计 token）解耦。
+承接 AnswerMesh 语义缓存的向量生成与规则校验，与 tokenizer（计 token）解耦。
 - `/embed`：256 维 FNV 哈希加权词面嵌入 + 主题/意图/上下文/状态抽取（契约见 spec）
 - `/rerank`：主题/意图/语言/操作冲突硬拒 + 关键词 Jaccard
 - `/healthz`：健康检查（embedding_type=fnv_hash, dimension=256）

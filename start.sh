@@ -120,7 +120,7 @@ if [ ! -f "$BASE/semantic/models/e5s-v1/model.onnx" ]; then
   if [ ! -f "$BASE/semantic/models/e5s-v1/model.onnx" ]; then
     echo "⚠ 未找到 semantic 模型文件（semantic/models/e5s-v1/model.onnx）：语义缓存将不可用（/embed 会 500 → 优雅 miss，聊天不受影响）。"
     echo "  获取：bash semantic/tools/fetch_model.sh   # 从 GitHub Release 下载+sha256 校验（约 79MB）"
-    echo "       或手动拷贝开发机 semantic/models/e5s-v1/。Release: https://github.com/robotlover-1/ECHO-CHAT/releases/tag/models-e5s-v1"
+    echo "       或手动拷贝开发机 semantic/models/e5s-v1/。Release: https://github.com/robotlover-1/Answermesh/releases/tag/models-e5s-v1"
   fi
 fi
 
@@ -143,7 +143,7 @@ ensure_frpc() {
   fi
   if [ ! -x "$FRPC_BIN" ]; then
     echo "  [$FRPC_NAME] ⚠ 跳过：未找到 $FRPC_BIN"
-    echo "    获取 frp 0.62.1 客户端（须与云端 frps 同版本），见 docs/echo-chat-frp-nat-traversal.md"
+    echo "    获取 frp 0.62.1 客户端（须与云端 frps 同版本），见 docs/answermesh-frp-nat-traversal.md"
     return 2
   fi
 

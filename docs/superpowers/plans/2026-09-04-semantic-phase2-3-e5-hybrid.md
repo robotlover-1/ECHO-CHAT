@@ -1,4 +1,4 @@
-# ECHO-CHAT 语义检索 Phase 2+3（合并）实施计划：E5 Dense + 指纹 + 规则硬门 融合检索
+# AnswerMesh 语义检索 Phase 2+3（合并）实施计划：E5 Dense + 指纹 + 规则硬门 融合检索
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 仓库根 = ECHO-CHAT；kvstore 子模块仓库在 `kvstore/`（pocket-kv）。命令默认仓库根执行；禁 sudo/root；杀服务用 `runtime/pids/*.pid` + `./start.sh`，勿用 `pkill -f`。
+- 仓库根 = AnswerMesh；kvstore 子模块仓库在 `kvstore/`（pocket-kv）。命令默认仓库根执行；禁 sudo/root；杀服务用 `runtime/pids/*.pid` + `./start.sh`，勿用 `pkill -f`。
 - **前缀职责唯一在 models**：业务层/decision/路由禁止手工拼 `query:`/`passage:`；`encode_*` 内部自剥已有前缀。写查必须一致（默认均 encode_query）。
 - **线上决策无模型**：`hard_decide(qp,cp) -> (shared, reason, soft)` 纯规则；向量分一律来自 VSEARCH；Query 每请求只编码一次。
 - 命名空间含版本 `semd:e5s:v1:`（常量）；`/model-info` 与 Go config 不一致 → 禁用向量缓存(仅 fp 保留)并告警。
@@ -559,7 +559,7 @@ git commit -m "refactor(semantic): decision 纯规则化 hard_decide(shared/reas
 **Files:**
 - Modify: `kvstore/kvstore/src/storage/kvs_vector.c`、命令分发（`kvstore/kvstore/src/main/kvstore.c` VSEARCH 分支）
 - Test: C 侧新增/复用测试入口（`kvstore/kvstore/tests/` 既有结构内加 vsearch 用例）
-- Modify: ECHO-CHAT `.gitmodules` 指针 bump（在子模块提交后）
+- Modify: AnswerMesh `.gitmodules` 指针 bump（在子模块提交后）
 
 **Interfaces:**
 - Produces：`VSEARCH <dim> <query_vec> <topk> [prefix]`；prefix 缺省 `semcache:`；白名单校验。Task 5 Go 调用 `VSEARCH 384 <vec> 30 "semd:e5s:v1:"`。

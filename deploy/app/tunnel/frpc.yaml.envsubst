@@ -25,7 +25,7 @@ log:
   maxDays: 7
 
 proxies:
-  - name: echo-chat-web
+  - name: answermesh-web
     type: http
     localIP: 127.0.0.1
     localPort: 7080

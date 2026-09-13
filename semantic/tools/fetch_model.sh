@@ -10,7 +10,7 @@
 set -euo pipefail
 
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DIRECT="https://github.com/robotlover-1/ECHO-CHAT/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz"
+DIRECT="https://github.com/robotlover-1/Answermesh/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz"
 MIRRORS=(
   "https://ghfast.top/$DIRECT"
   "https://gh-proxy.com/$DIRECT"

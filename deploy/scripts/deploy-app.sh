@@ -21,7 +21,7 @@ info "渲染配置..."
 bash "${REPO_ROOT}/deploy/scripts/render-config.sh" app
 check_consistency app
 
-info "启动 ECHO-CHAT 主栈..."
+info "启动 AnswerMesh 主栈..."
 docker compose --env-file "${APP_ENV}" -f "${COMPOSE_MAIN}" up -d --build
 
 info "等待 /api/readyz ..."

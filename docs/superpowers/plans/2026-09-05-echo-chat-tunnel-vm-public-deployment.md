@@ -1,14 +1,14 @@
-# ECHO-CHAT 公网 tunnel 部署 —— 仓库落地 Implementation Plan
+# AnswerMesh 公网 tunnel 部署 —— 仓库落地 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 ECHO-CHAT 仓库（main，工作树 `tmp/t1/ECHO-CHAT`）落地公网 tunnel 部署的可静态交付制品：`deploy/{app,edge,scripts}`、`docker/config` 模板化、`docker/compose.yaml` 端口收紧、ai-chat-backend 最小安全改动（可信代理 + 真就绪检查），使主方案可直接在真实 VM 上执行。
+**Goal:** 在 AnswerMesh 仓库（main，工作树 `tmp/t1/AnswerMesh`）落地公网 tunnel 部署的可静态交付制品：`deploy/{app,edge,scripts}`、`docker/config` 模板化、`docker/compose.yaml` 端口收紧、ai-chat-backend 最小安全改动（可信代理 + 真就绪检查），使主方案可直接在真实 VM 上执行。
 
-**Architecture:** 双节点拓扑 —— 应用节点跑 ECHO-CHAT 主 compose + 独立 frpc 栈（host 网络连 `127.0.0.1:7080`）；公网入口节点跑 frps + Nginx（host 网络，TLS 由 edge 脚本两阶段引导）。密钥全部走 `.env` + 受限 envsubst 部署时渲染；git 只保留无真实凭据模板。backend 增加 gin 可信代理装配与 `/api/readyz`。
+**Architecture:** 双节点拓扑 —— 应用节点跑 AnswerMesh 主 compose + 独立 frpc 栈（host 网络连 `127.0.0.1:7080`）；公网入口节点跑 frps + Nginx（host 网络，TLS 由 edge 脚本两阶段引导）。密钥全部走 `.env` + 受限 envsubst 部署时渲染；git 只保留无真实凭据模板。backend 增加 gin 可信代理装配与 `/api/readyz`。
 
 **Tech Stack:** docker compose v2、FRP 0.62.1（frps/frpc）、nginx、certbot、Go(gin) 、GNU envsubst、bash。
 
-**Spec:** `docs/superpowers/specs/2026-09-05-echo-chat-tunnel-vm-public-deployment-design.md`（rev2）。主方案：`docs/deploy/2026-09-05-echo-chat-tunnel-vm-public-deployment-design.md`。
+**Spec:** `docs/superpowers/specs/2026-09-05-answermesh-tunnel-vm-public-deployment-design.md`（rev2）。主方案：`docs/deploy/2026-09-05-answermesh-tunnel-vm-public-deployment-design.md`。
 
 ## Global Constraints
 
@@ -146,7 +146,7 @@ import (
 )
 
 // defaultTrustedProxies：公网部署后端只被同机 frpc(host 网络)访问，回环一跳可信；
-// XFF 由 edge Nginx 覆盖式写入（见 deploy/edge/nginx/echo-chat.conf.envsubst）。
+// XFF 由 edge Nginx 覆盖式写入（见 deploy/edge/nginx/answermesh.conf.envsubst）。
 var defaultTrustedProxies = []string{"127.0.0.1", "::1"}
 
 // NewEngine 构造 gin 引擎并显式设置可信代理。configured 为空 → 回退默认回环；
@@ -482,7 +482,7 @@ git commit -m "feat(backend): /api/readyz 真就绪检查(mysql/kvstore/tokenize
 - [ ] **Step 1: 生成 backend 模板并做替换**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 cp docker/config/backend.yaml docker/config/backend.yaml.envsubst
 ```
 
@@ -527,7 +527,7 @@ cp docker/config/service.yaml docker/config/service.yaml.envsubst
 创建 `deploy/app/.env.example`：
 
 ```dotenv
-# ECHO-CHAT 应用节点 .env 示例。cp 为 .env 后按需修改；生产必须覆盖标注「生产必改」项。
+# AnswerMesh 应用节点 .env 示例。cp 为 .env 后按需修改；生产必须覆盖标注「生产必改」项。
 # 密钥只存 .env(600)；不要提交 .env。FRP_AUTH_TOKEN 两端必须一致。
 
 # ---- common ----
@@ -577,7 +577,7 @@ FRPS_IMAGE=snowdreamtech/frps:0.62.1
 
 ```bash
 #!/usr/bin/env bash
-# ECHO-CHAT deploy 共享函数。source 本文件后使用。
+# AnswerMesh deploy 共享函数。source 本文件后使用。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -669,8 +669,8 @@ assert_port_free() {
 # 部署前渲染：把 .env 注入模板，产出 gitignore 的最终配置。
 # 用法: render-config.sh app | edge
 #   app  : docker/config/{backend,service}.yaml + deploy/app/tunnel/frpc.yaml
-#   edge : deploy/edge/tunnel/frps.yaml + deploy/edge/nginx/echo-chat.conf
-# 说明: nginx 完整/引导 conf 由 deploy-edge.sh 按证书阶段决定渲染哪个模板到 echo-chat.conf。
+#   edge : deploy/edge/tunnel/frps.yaml + deploy/edge/nginx/answermesh.conf
+# 说明: nginx 完整/引导 conf 由 deploy-edge.sh 按证书阶段决定渲染哪个模板到 answermesh.conf。
 set -euo pipefail
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -695,7 +695,7 @@ case "${1:-}" in
     render_restricted "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml.envsubst" \
       "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml" \
       '${FRP_BIND_PORT} ${FRP_VHOST_HTTP_PORT} ${FRP_AUTH_TOKEN} ${FRP_DASHBOARD_PASSWORD}'
-    # echo-chat.conf 由 deploy-edge.sh 决定写入哪个模板，此处不渲染。
+    # answermesh.conf 由 deploy-edge.sh 决定写入哪个模板，此处不渲染。
     ;;
   *) die "用法: render-config.sh app|edge" ;;
 esac
@@ -709,7 +709,7 @@ esac
 
 ```gitignore
 # ============================================
-# ECHO-CHAT 公网部署：渲染产物与密钥（勿提交）
+# AnswerMesh 公网部署：渲染产物与密钥（勿提交）
 # ============================================
 docker/config/backend.yaml
 docker/config/service.yaml
@@ -717,7 +717,7 @@ deploy/app/.env
 deploy/edge/.env
 deploy/app/tunnel/frpc.yaml
 deploy/edge/tunnel/frps.yaml
-deploy/edge/nginx/echo-chat.conf
+deploy/edge/nginx/answermesh.conf
 ```
 
 ```bash
@@ -729,7 +729,7 @@ git rm --cached docker/config/backend.yaml docker/config/service.yaml
 - [ ] **Step 7: 渲染冒烟（app）**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 cp deploy/app/.env.example deploy/app/.env
 # 将必填占位填上假值以便测试：
 sed -i 's|CHANGE_ME_random_hex_64|1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff|; s|CHANGE_ME_sk-xxx|sk-dummy-for-render-test|; s|CHANGE_ME_vector_db_url|http://vdbtest:60000|; s|CHANGE_ME_vector_db_user|u|; s|CHANGE_ME_vector_db_pwd|p|' deploy/app/.env
@@ -754,7 +754,7 @@ Expected: 打印 `必填变量 FRP_AUTH_TOKEN ...` 且 `exit=1`（非零）。
 - [ ] **Step 9: 清理测试 .env 与产物**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 rm -f deploy/app/.env docker/config/backend.yaml docker/config/service.yaml
 ```
 
@@ -859,7 +859,7 @@ log:
   maxDays: 7
 
 proxies:
-  - name: echo-chat-web
+  - name: answermesh-web
     type: http
     localIP: 127.0.0.1
     localPort: 7080
@@ -874,8 +874,8 @@ proxies:
 创建 `deploy/app/compose.yaml`：
 
 ```yaml
-# frpc 独立栈（应用节点）。ECHO-CHAT 主栈见 docker/compose.yaml（deploy-app.sh 串起两者）。
-name: echo-chat-frpc
+# frpc 独立栈（应用节点）。AnswerMesh 主栈见 docker/compose.yaml（deploy-app.sh 串起两者）。
+name: answermesh-frpc
 
 services:
   frpc:
@@ -916,7 +916,7 @@ preflight_host 8192 40960
 info "渲染配置..."
 bash "${REPO_ROOT}/deploy/scripts/render-config.sh" app
 
-info "启动 ECHO-CHAT 主栈..."
+info "启动 AnswerMesh 主栈..."
 docker compose --env-file "${APP_ENV}" -f "${COMPOSE_MAIN}" up -d --build
 
 info "等待 /api/readyz ..."
@@ -978,13 +978,13 @@ git commit -m "feat(deploy): 应用节点 frpc 独立栈(host网络) + deploy-ap
 **Files:**
 - Create: `deploy/edge/tunnel/frps.yaml.envsubst`
 - Create: `deploy/edge/compose.yaml`
-- Create: `deploy/edge/nginx/echo-chat.bootstrap.conf.envsubst`
-- Create: `deploy/edge/nginx/echo-chat.conf.envsubst`
+- Create: `deploy/edge/nginx/answermesh.bootstrap.conf.envsubst`
+- Create: `deploy/edge/nginx/answermesh.conf.envsubst`
 - Create: `deploy/scripts/deploy-edge.sh`
 - Modify: `deploy/scripts/render-config.sh`
 
 **Interfaces:**
-- Produces: `deploy/edge/tunnel/frps.yaml`、`deploy/edge/nginx/echo-chat.conf`（渲染产物）；edge 部署两阶段：cert 缺失→bootstrap Nginx→certbot webroot→全量 HTTPS；已有 cert→直接全量。
+- Produces: `deploy/edge/tunnel/frps.yaml`、`deploy/edge/nginx/answermesh.conf`（渲染产物）；edge 部署两阶段：cert 缺失→bootstrap Nginx→certbot webroot→全量 HTTPS；已有 cert→直接全量。
 
 - [ ] **Step 1: frps 模板**
 
@@ -1023,7 +1023,7 @@ log:
 
 ```yaml
 # 公网入口节点：frps + nginx。运行目录=deploy/edge（compose 自动读同目录 .env）。
-name: echo-chat-edge
+name: answermesh-edge
 
 services:
   frps:
@@ -1042,21 +1042,21 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./nginx/echo-chat.conf:/etc/nginx/conf.d/echo-chat.conf:ro
+      - ./nginx/answermesh.conf:/etc/nginx/conf.d/answermesh.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro
     depends_on:
       - frps
 ```
 
-> 说明：`echo-chat.conf` 是渲染产物，先由 deploy-edge.sh 写好再 `up -d nginx`，保证 nginx 首次启动即引用已存在的有效 conf（无证书时是 bootstrap）。
+> 说明：`answermesh.conf` 是渲染产物，先由 deploy-edge.sh 写好再 `up -d nginx`，保证 nginx 首次启动即引用已存在的有效 conf（无证书时是 bootstrap）。
 
 - [ ] **Step 3: bootstrap Nginx 模板**
 
-创建 `deploy/edge/nginx/echo-chat.bootstrap.conf.envsubst`（无 ssl，仅 80/acme/503）：
+创建 `deploy/edge/nginx/answermesh.bootstrap.conf.envsubst`（无 ssl，仅 80/acme/503）：
 
 ```nginx
-# 首次引导：证书不存在时的最小 80 监听，只为 acme webroot。由 deploy-edge.sh 写入 echo-chat.conf。
+# 首次引导：证书不存在时的最小 80 监听，只为 acme webroot。由 deploy-edge.sh 写入 answermesh.conf。
 server {
     listen 80;
     listen [::]:80;
@@ -1074,12 +1074,12 @@ server {
 
 - [ ] **Step 4: 全量 Nginx 模板**
 
-创建 `deploy/edge/nginx/echo-chat.conf.envsubst`（对齐主方案 §5.6；XFF 覆盖式 + 流式禁缓冲 + 安全头）：
+创建 `deploy/edge/nginx/answermesh.conf.envsubst`（对齐主方案 §5.6；XFF 覆盖式 + 流式禁缓冲 + 安全头）：
 
 ```nginx
-# ECHO-CHAT 公网 HTTPS 正式配置（渲染产物）。模板变量仅 PUBLIC_DOMAIN / FRP_VHOST_HTTP_PORT。
+# AnswerMesh 公网 HTTPS 正式配置（渲染产物）。模板变量仅 PUBLIC_DOMAIN / FRP_VHOST_HTTP_PORT。
 # 与主方案 §5.6 的有意差异：X-Forwarded-For 用 $remote_addr 覆盖，杜绝外部伪造链首(评审 P0-3)。
-limit_req_zone $binary_remote_addr zone=echo_api:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=answermesh_api:10m rate=10r/s;
 
 server {
     listen 80;
@@ -1114,7 +1114,7 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
 
     location /api/ {
-        limit_req zone=echo_api burst=30 nodelay;
+        limit_req zone=answermesh_api burst=30 nodelay;
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -1124,7 +1124,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Connection "";
 
-        # ECHO-CHAT 流式响应：禁止一切缓冲。
+        # AnswerMesh 流式响应：禁止一切缓冲。
         proxy_buffering off;
         proxy_cache off;
         gzip off;
@@ -1167,9 +1167,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 EDGE_DIR="${REPO_ROOT}/deploy/edge"
 EDGE_ENV="${EDGE_DIR}/.env"
-NGINX_CONF="${EDGE_DIR}/nginx/echo-chat.conf"
-BOOT_TMPL="${EDGE_DIR}/nginx/echo-chat.bootstrap.conf.envsubst"
-FULL_TMPL="${EDGE_DIR}/nginx/echo-chat.conf.envsubst"
+NGINX_CONF="${EDGE_DIR}/nginx/answermesh.conf"
+BOOT_TMPL="${EDGE_DIR}/nginx/answermesh.bootstrap.conf.envsubst"
+FULL_TMPL="${EDGE_DIR}/nginx/answermesh.conf.envsubst"
 FRPS_YAML="${EDGE_DIR}/tunnel/frps.yaml"
 
 [[ $EUID -eq 0 ]] || die "deploy-edge 需要 root（写 /etc/letsencrypt 与 nginx reload）"
@@ -1189,7 +1189,7 @@ FULLCHAIN="${CERT_DIR}/fullchain.pem"
 render_full() {  # 全量 conf → nginx conf 路径（先在暂存目录校验候选，再落盘）
   local stage cand
   stage="$(mktemp -d "${NGINX_CONF}.stage.XXXXXX")"
-  cand="${stage}/echo-chat.conf"   # 镜像 conf.d 只 include *.conf
+  cand="${stage}/answermesh.conf"   # 镜像 conf.d 只 include *.conf
   trap 'rm -rf "${stage}" "${NGINX_CONF}.candidate"*' RETURN
   umask 077
   envsubst '${PUBLIC_DOMAIN} ${FRP_VHOST_HTTP_PORT}' < "${FULL_TMPL}" > "${cand}"
@@ -1272,7 +1272,7 @@ curl -fsS "https://${PUBLIC_DOMAIN}/api/health" >/dev/null \
   && info "https://${PUBLIC_DOMAIN} 验收通过" \
   || die "HTTPS 冒烟失败，查 nginx 日志: docker compose -f ${EDGE_DIR}/compose.yaml logs --tail=50 nginx"
 
-info "续期 deploy hook 建议写入 /etc/letsencrypt/renewal-hooks/deploy/reload-echo-nginx.sh（见 deploy/README.md）"
+info "续期 deploy hook 建议写入 /etc/letsencrypt/renewal-hooks/deploy/reload-answermesh-nginx.sh（见 deploy/README.md）"
 ```
 
 - [ ] **Step 6: 补 render-config edge 的 nginx conf 说明（可选）**
@@ -1292,14 +1292,14 @@ mkdir -p /tmp/echot/conf.d && cd /tmp/echot
 openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
   -keyout privkey.pem -out fullchain.pem -subj "/CN=chat.example.com" >/dev/null 2>&1
 envsubst '${PUBLIC_DOMAIN} ${FRP_VHOST_HTTP_PORT}' \
-  < /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT/deploy/edge/nginx/echo-chat.conf.envsubst > conf.d/echo-chat.conf
-grep -q '\$\{' conf.d/echo-chat.conf && echo "RESIDUE!" || echo "no residue"
+  < /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh/deploy/edge/nginx/answermesh.conf.envsubst > conf.d/answermesh.conf
+grep -q '\$\{' conf.d/answermesh.conf && echo "RESIDUE!" || echo "no residue"
 # 让 conf 里 /etc/letsencrypt/live/... 证书路径指向本地临时文件
-sed -i 's|/etc/letsencrypt/live/chat.example.com|/tmp/echot|g' conf.d/echo-chat.conf
+sed -i 's|/etc/letsencrypt/live/chat.example.com|/tmp/echot|g' conf.d/answermesh.conf
 # nginx -t wrapper（http{} 内 include conf.d/*.conf，触发 443 server 块校验）
 printf 'pid /tmp/echot/nginx.pid; error_log /tmp/echot/error.log; events { worker_connections 64; } http { include /etc/nginx/mime.types; include /tmp/echot/conf.d/*.conf; }\n' > main.conf
 nginx -t -c /tmp/echot/main.conf -p /tmp/echot/
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT && rm -rf /tmp/echot
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh && rm -rf /tmp/echot
 ```
 
 Expected: `syntax OK`、`yaml OK`、`no residue`、`nginx: configuration ... test is successful`。
@@ -1307,7 +1307,7 @@ Expected: `syntax OK`、`yaml OK`、`no residue`、`nginx: configuration ... tes
 - [ ] **Step 8: Commit**
 
 ```bash
-git add deploy/edge/tunnel/frps.yaml.envsubst deploy/edge/compose.yaml deploy/edge/nginx/echo-chat.bootstrap.conf.envsubst deploy/edge/nginx/echo-chat.conf.envsubst deploy/scripts/deploy-edge.sh deploy/scripts/render-config.sh
+git add deploy/edge/tunnel/frps.yaml.envsubst deploy/edge/compose.yaml deploy/edge/nginx/answermesh.bootstrap.conf.envsubst deploy/edge/nginx/answermesh.conf.envsubst deploy/scripts/deploy-edge.sh deploy/scripts/render-config.sh
 git commit -m "feat(deploy): 公网入口 frps + 两阶段 Nginx(TLS bootstrap→certbot→HTTPS) + deploy-edge.sh
 - XFF 覆盖式转发(P0-3)；全量 conf 候选先 nginx -t 再落盘；幂等不重复申请"
 ```
@@ -1330,7 +1330,7 @@ git commit -m "feat(deploy): 公网入口 frps + 两阶段 Nginx(TLS bootstrap�
 
 ```bash
 #!/usr/bin/env bash
-# ECHO-CHAT 公网隧道分层验收（主方案 §9）。层数越低越先验证。
+# AnswerMesh 公网隧道分层验收（主方案 §9）。层数越低越先验证。
 # 用法:
 #   bash smoke-test.sh app                              # 应用节点本地 7080
 #   bash smoke-test.sh edge                             # 入口节点: frps host 路由 + https
@@ -1460,9 +1460,9 @@ check_consistency() {
         || die "frps bindPort != FRP_BIND_PORT"
       grep -q "vhostHTTPPort: ${FRP_VHOST_HTTP_PORT:-}" "${REPO_ROOT}/deploy/edge/tunnel/frps.yaml" \
         || die "frps vhostHTTPPort != FRP_VHOST_HTTP_PORT"
-      grep -q "server_name ${PUBLIC_DOMAIN:-};" "${REPO_ROOT}/deploy/edge/nginx/echo-chat.conf" \
+      grep -q "server_name ${PUBLIC_DOMAIN:-};" "${REPO_ROOT}/deploy/edge/nginx/answermesh.conf" \
         || die "nginx server_name != PUBLIC_DOMAIN"
-      grep -q "proxy_pass http://127.0.0.1:${FRP_VHOST_HTTP_PORT:-}" "${REPO_ROOT}/deploy/edge/nginx/echo-chat.conf" \
+      grep -q "proxy_pass http://127.0.0.1:${FRP_VHOST_HTTP_PORT:-}" "${REPO_ROOT}/deploy/edge/nginx/answermesh.conf" \
         || die "nginx upstream != FRP_VHOST_HTTP_PORT"
       ;;
   esac
@@ -1470,8 +1470,8 @@ check_consistency() {
 ```
 
 精确插入位置：
-- `deploy-app.sh`：紧接 `render-config.sh app` 之后、`启动 ECHO-CHAT 主栈...` 之前加一行 `check_consistency app`（此时 `docker/config/*` 与 `frpc.yaml` 均已渲染）。
-- `deploy-edge.sh`：紧接函数定义之后、`info "启动 frps..."` 之前无需调（conf 未定）；在**最终 `info "HTTPS 验收..."` 之前**加一行 `check_consistency edge`（此时 `echo-chat.conf` 已写入，frps.yaml 已渲染）。
+- `deploy-app.sh`：紧接 `render-config.sh app` 之后、`启动 AnswerMesh 主栈...` 之前加一行 `check_consistency app`（此时 `docker/config/*` 与 `frpc.yaml` 均已渲染）。
+- `deploy-edge.sh`：紧接函数定义之后、`info "启动 frps..."` 之前无需调（conf 未定）；在**最终 `info "HTTPS 验收..."` 之前**加一行 `check_consistency edge`（此时 `answermesh.conf` 已写入，frps.yaml 已渲染）。
 
 两个脚本改完都跑 `bash -n` 确认无语法错误。
 
@@ -1480,13 +1480,13 @@ check_consistency() {
 创建 `deploy/README.md`，内容至少覆盖：
 
 ```markdown
-# ECHO-CHAT 公网部署（deploy/）
+# AnswerMesh 公网部署（deploy/）
 
-拓扑与主方案：docs/deploy/2026-09-05-echo-chat-tunnel-vm-public-deployment-design.md
-落地 spec：docs/superpowers/specs/2026-09-05-echo-chat-tunnel-vm-public-deployment-design.md
+拓扑与主方案：docs/deploy/2026-09-05-answermesh-tunnel-vm-public-deployment-design.md
+落地 spec：docs/superpowers/specs/2026-09-05-answermesh-tunnel-vm-public-deployment-design.md
 
 ## 双节点
-- 应用 VM：ECHO-CHAT 主 compose（127.0.0.1:7080）+ deploy/app frpc 栈。
+- 应用 VM：AnswerMesh 主 compose（127.0.0.1:7080）+ deploy/app frpc 栈。
 - 入口 VM：deploy/edge frps + nginx(80/443)。
 - 变量对照：见 deploy/{app,edge}/.env.example（common: PUBLIC_DOMAIN/FRP_AUTH_TOKEN 两端一致）。
 - FRP token 用: openssl rand -hex 32（放 .env 的 FRP_AUTH_TOKEN）。
@@ -1499,19 +1499,19 @@ check_consistency() {
 
 ## MySQL（应用 VM，外部/宿主机）
 CREATE DATABASE ai_chat CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'echo_chat'@'%' IDENTIFIED BY '<STRONG_PASSWORD>';
-GRANT ALL PRIVILEGES ON ai_chat.* TO 'echo_chat'@'%';
+CREATE USER 'answermesh'@'%' IDENTIFIED BY '<STRONG_PASSWORD>';
+GRANT ALL PRIVILEGES ON ai_chat.* TO 'answermesh'@'%';
 FLUSH PRIVILEGES;
-# MYSQL_DSN=echo_chat:<STRONG_PASSWORD>@tcp(host.docker.internal:3306)/ai_chat?charset=utf8mb4&parseTime=true
+# MYSQL_DSN=answermesh:<STRONG_PASSWORD>@tcp(host.docker.internal:3306)/ai_chat?charset=utf8mb4&parseTime=true
 
 ## 镜像注意
 - frps/frpc 默认 snowdreamtech:0.62.1；目标机 docker image inspect 核对 ENTRYPOINT；
   若换镜像保持 frps/frpc 同版本；固定版本后再固定 digest(P1)。
 
 ## 证书续期（edge）
-- /etc/letsencrypt/renewal-hooks/deploy/reload-echo-nginx.sh:
+- /etc/letsencrypt/renewal-hooks/deploy/reload-answermesh-nginx.sh:
     #!/usr/bin/env bash
-    docker compose -f /opt/echo-chat-edge/compose.yaml exec -T nginx nginx -s reload
+    docker compose -f /opt/answermesh-edge/compose.yaml exec -T nginx nginx -s reload
 - sudo certbot renew --dry-run 验证。
 
 ## 交付边界
@@ -1558,7 +1558,7 @@ Expected：全部 PASS。
 - [ ] **Step 2: 渲染全链冒烟（app+edge 双 .env 假值）**
 
 ```bash
-cd /home/pp/Desktop/ls_study/proj/tmp/t1/ECHO-CHAT
+cd /home/pp/Desktop/ls_study/proj/tmp/t1/AnswerMesh
 cp deploy/app/.env.example deploy/app/.env; cp deploy/edge/.env.example deploy/edge/.env
 sed -i -E 's/CHANGE_ME_random_hex_64/1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff/g; s/CHANGE_ME_sk-xxx/sk-dummy/g; s#CHANGE_ME_vector_db_url#http://vdbtest:60000#; s/CHANGE_ME_vector_db_user/u/; s/CHANGE_ME_vector_db_pwd/p/' deploy/app/.env
 sed -i -E 's/CHANGE_ME_random_hex_64/1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff/g; s/CHANGE_ME_admin@example.com/admin@example.com/; s/CHANGE_ME_dashboard_pwd/dashpwd/' deploy/edge/.env
@@ -1566,8 +1566,8 @@ sed -i -E 's/CHANGE_ME_random_hex_64/1111222233334444555566667777888899990000aaa
 bash deploy/scripts/render-config.sh app
 bash deploy/scripts/render-config.sh edge
 export PUBLIC_DOMAIN=chat.example.com FRP_VHOST_HTTP_PORT=39001
-envsubst '${PUBLIC_DOMAIN} ${FRP_VHOST_HTTP_PORT}' < deploy/edge/nginx/echo-chat.conf.envsubst > /tmp/full.conf
-envsubst '${PUBLIC_DOMAIN}' < deploy/edge/nginx/echo-chat.bootstrap.conf.envsubst > /tmp/boot.conf
+envsubst '${PUBLIC_DOMAIN} ${FRP_VHOST_HTTP_PORT}' < deploy/edge/nginx/answermesh.conf.envsubst > /tmp/full.conf
+envsubst '${PUBLIC_DOMAIN}' < deploy/edge/nginx/answermesh.bootstrap.conf.envsubst > /tmp/boot.conf
 grep -l '\$\{' /tmp/full.conf /tmp/boot.conf 2>/dev/null && die=1 || echo "no residue full/boot"
 grep -q '$host' /tmp/full.conf && echo "nginx \$host preserved"
 ```

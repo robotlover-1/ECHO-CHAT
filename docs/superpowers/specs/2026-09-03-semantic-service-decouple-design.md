@@ -2,8 +2,8 @@
 
 - 日期：2026-09-03
 - 状态：已批准（吸收评审意见修订后）
-- 位置：ECHO-CHAT monorepo（`semantic/` 新服务 + `tokenizer/` 裁剪 + `ai-chat-service` 指路 + 编排/文档）
-- 关联：`proj/tmp/ECHO-CHAT语义检索高命中率改造方案.md`（仓外草稿，远期蓝图）与 `proj/tmp/ECHO-CHAT语义服务解耦方案评审与修改建议 (1).md`（评审）
+- 位置：AnswerMesh monorepo（`semantic/` 新服务 + `tokenizer/` 裁剪 + `ai-chat-service` 指路 + 编排/文档）
+- 关联：`proj/tmp/AnswerMesh语义检索高命中率改造方案.md`（仓外草稿，远期蓝图）与 `proj/tmp/AnswerMesh语义服务解耦方案评审与修改建议 (1).md`（评审）
 - 定位：tmp 方案的 **Phase 0：服务解耦**。只改善架构、不直接改善检索准确率；"红黑树≈rbtree、C≠C++"需在后续 Phase 1（别名/硬约束）实现
 
 ## 背景与目标
@@ -35,7 +35,7 @@
 ## 已确认决策
 
 - **范围**：仅解耦，语义行为/检索效果不变（嵌入仍 256 维 FNV 哈希、阈值 0.35/0.25 不动、kvstore VSEARCH 与向量记录格式不动、`CacheQuery/CacheWrite` 签名不动）
-- **位置**：ECHO-CHAT monorepo 新增 `semantic/`，与 `tokenizer/` 平级、独立端口 3003、自带 requirements/Dockerfile/README/tests
+- **位置**：AnswerMesh monorepo 新增 `semantic/`，与 `tokenizer/` 平级、独立端口 3003、自带 requirements/Dockerfile/README/tests
 - **HTTP 契约**：新服务照搬现有 `/embed`、`/rerank` 路由与请求/响应结构；`semcache.go` 的 `embedResp`/`rerankResp` 解析零改动
 - **超时**：Go→semantic 请求整体超时 1.5s、绑定 ctx；失败→快速 cache miss（聊天继续走 LLM）
 - **依赖锁定**：`nuxt==0.2.15`、`jieba==0.42.1`、`tiktoken==0.7.0`

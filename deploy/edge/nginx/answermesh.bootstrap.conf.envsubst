@@ -1,4 +1,4 @@
-# 首次引导：证书不存在时的最小 80 监听，只为 acme webroot。由 deploy-edge.sh 写入 echo-chat.conf。
+# 首次引导：证书不存在时的最小 80 监听，只为 acme webroot。由 deploy-edge.sh 写入 answermesh.conf。
 server {
     listen 80;
     listen [::]:80;

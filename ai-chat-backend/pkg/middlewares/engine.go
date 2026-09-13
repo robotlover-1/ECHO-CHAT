@@ -5,7 +5,7 @@ import (
 )
 
 // defaultTrustedProxies：公网部署后端只被同机 frpc(host 网络)访问，回环一跳可信；
-// XFF 由 edge Nginx 覆盖式写入（见 deploy/edge/nginx/echo-chat.conf.envsubst）。
+// XFF 由 edge Nginx 覆盖式写入（见 deploy/edge/nginx/answermesh.conf.envsubst）。
 var defaultTrustedProxies = []string{"127.0.0.1", "::1"}
 
 // NewEngine 构造 gin 引擎并显式设置可信代理。configured 为空 → 回退默认回环；

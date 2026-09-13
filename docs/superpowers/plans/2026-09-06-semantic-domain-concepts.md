@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 工作树 = `tmp/t1/ECHO-CHAT`（git 仓库，`main`）。仓库里有与本任务无关的未提交改动（`openai-api-proxy/dev.config.yaml`、未跟踪 `kvstore/`）——**只暂存/提交本任务改的文件，绝不 `git add -A`**。
+- 工作树 = `tmp/t1/AnswerMesh`（git 仓库，`main`）。仓库里有与本任务无关的未提交改动（`openai-api-proxy/dev.config.yaml`、未跟踪 `kvstore/`）——**只暂存/提交本任务改的文件，绝不 `git add -A`**。
 - 全部命令在 `semantic/` 下跑 pytest：`python3 -m pytest <test> -q`。
 - `concepts.json` schema：每条须有非空 `canonical_zh`/`canonical_en`/`aliases`；id 全局唯一；别名经 `folding_variants` 展开后跨概念必须唯一（validator 启动即校验）；禁单字符拉丁别名；`concepts` 总数下限 40。
 - 别名数组与 id 用本计划给的值**逐字复制**——沙箱已验证全局唯一（74 概念无碰撞）。

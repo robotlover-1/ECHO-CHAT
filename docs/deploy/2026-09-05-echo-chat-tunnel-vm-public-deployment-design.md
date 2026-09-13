@@ -1,9 +1,9 @@
-# ECHO-CHAT 结合 tunnel 的虚拟机公网部署实施方案
+# AnswerMesh 结合 tunnel 的虚拟机公网部署实施方案
 
 > 文档日期：2026-09-05  
-> 适用仓库：[robotlover-1/ECHO-CHAT](https://github.com/robotlover-1/ECHO-CHAT)（`main` 分支）  
+> 适用仓库：[robotlover-1/Answermesh](https://github.com/robotlover-1/Answermesh)（`main` 分支）  
 > tunnel 来源：用户提供的 `11.3-tunnel-master.zip`  
-> 目标：将 ECHO-CHAT 部署在虚拟机或内网主机，通过 tunnel/FRP 安全暴露到公网，并支持流式聊天、域名和 HTTPS。
+> 目标：将 AnswerMesh 部署在虚拟机或内网主机，通过 tunnel/FRP 安全暴露到公网，并支持流式聊天、域名和 HTTPS。
 
 ---
 
@@ -13,13 +13,13 @@
 
 建议第一阶段采用下面的方式落地：
 
-1. **ECHO-CHAT 应用节点**运行项目现有 Docker Compose，仅在本机暴露 `7080`。
-2. **tunnel-client（frpc）**与 ECHO-CHAT 部署在同一台应用虚拟机，将 `127.0.0.1:7080` 映射到公网 tunnel-server。
+1. **AnswerMesh 应用节点**运行项目现有 Docker Compose，仅在本机暴露 `7080`。
+2. **tunnel-client（frpc）**与 AnswerMesh 部署在同一台应用虚拟机，将 `127.0.0.1:7080` 映射到公网 tunnel-server。
 3. **公网入口节点**运行 tunnel-server（frps）和 Nginx。
 4. Nginx 监听 `80/443`、负责域名与 TLS，并把请求转发到 frps 的 HTTP 虚拟主机端口。
-5. 公网只开放 `22`、`80`、`443` 和 frpc 控制连接端口；ECHO-CHAT 的 `7080`、内部 zrpc/RPC、MySQL、Redis、向量数据库均不暴露。
+5. 公网只开放 `22`、`80`、`443` 和 frpc 控制连接端口；AnswerMesh 的 `7080`、内部 zrpc/RPC、MySQL、Redis、向量数据库均不暴露。
 
-这一方案复用了 tunnel 项目的核心机制、FRP 0.62.1 镜像和配置模型，但不引入其管理控制面。对单个 ECHO-CHAT 实例而言，这是依赖最少、最容易排障、风险最低的方案。
+这一方案复用了 tunnel 项目的核心机制、FRP 0.62.1 镜像和配置模型，但不引入其管理控制面。对单个 AnswerMesh 实例而言，这是依赖最少、最容易排障、风险最低的方案。
 
 ### 1.2 为什么不建议第一阶段直接部署 tunnel 全平台
 
@@ -33,15 +33,15 @@
 - 鉴权依赖外部 `user` 服务；
 - 每个用户动态分配 39000～49000 范围内的端口。
 
-若只是让一个 ECHO-CHAT 实例可公网访问，直接引入上述依赖会显著增加部署和安全成本。完整 tunnel 平台适合第二阶段的“多用户、多应用、动态创建隧道”场景。
+若只是让一个 AnswerMesh 实例可公网访问，直接引入上述依赖会显著增加部署和安全成本。完整 tunnel 平台适合第二阶段的“多用户、多应用、动态创建隧道”场景。
 
 ---
 
 ## 2. 已核对的项目现状
 
-### 2.1 ECHO-CHAT 对外入口
+### 2.1 AnswerMesh 对外入口
 
-ECHO-CHAT 当前 Docker 方案已经把前端静态资源合入 `ai-chat-backend` 镜像：
+AnswerMesh 当前 Docker 方案已经把前端静态资源合入 `ai-chat-backend` 镜像：
 
 - `docker/backend.Dockerfile` 构建 `ai-chat-web`，并复制到 `/app/www`；
 - `ai-chat-backend` 同时提供前端页面和 `/api/*`；
@@ -49,9 +49,9 @@ ECHO-CHAT 当前 Docker 方案已经把前端静态资源合入 `ai-chat-backend
 - 前端生产配置使用相对路径 `VITE_GLOB_API_URL=/api`；
 - 聊天接口为 `POST /api/chat-process`，以流式响应持续输出。
 
-因此 tunnel **只需代理 ECHO-CHAT 的统一入口 `7080`**。不要分别暴露前端、`ai-chat-service:50055`、tokenizer、semantic、keyword、sensitive、proxy、kvstore 等内部端口。
+因此 tunnel **只需代理 AnswerMesh 的统一入口 `7080`**。不要分别暴露前端、`ai-chat-service:50055`、tokenizer、semantic、keyword、sensitive、proxy、kvstore 等内部端口。
 
-### 2.2 ECHO-CHAT 内部调用关系
+### 2.2 AnswerMesh 内部调用关系
 
 ```mermaid
 flowchart TD
@@ -63,7 +63,7 @@ flowchart TD
     Service --> Internal["过滤、分词、语义、模型代理、存储"]
 ```
 
-这里的 zrpc 是 ECHO-CHAT 内部服务间协议，与公网 tunnel 是两个不同层次：
+这里的 zrpc 是 AnswerMesh 内部服务间协议，与公网 tunnel 是两个不同层次：
 
 - zrpc 负责应用内部 RPC；
 - tunnel/FRP 负责把 HTTP 入口穿透到公网；
@@ -89,7 +89,7 @@ tunnel 源码生成的 FRP YAML 主要字段如下：
 | 节点 | 网络条件 | 部署内容 | 公开端口 |
 | --- | --- | --- | --- |
 | 公网入口虚拟机 | 有固定公网 IPv4；域名可解析到它 | Nginx、frps | `22`、`80`、`443`、`39000` |
-| ECHO-CHAT 应用虚拟机 | 可在内网、NAT 后或仅能主动出网 | ECHO-CHAT Compose、frpc、MySQL（或外部 MySQL） | 不需要公网入站 |
+| AnswerMesh 应用虚拟机 | 可在内网、NAT 后或仅能主动出网 | AnswerMesh Compose、frpc、MySQL（或外部 MySQL） | 不需要公网入站 |
 
 建议规格：
 
@@ -102,11 +102,11 @@ tunnel 源码生成的 FRP YAML 主要字段如下：
 
 ### 3.2 单台公网虚拟机的处理
 
-如果 ECHO-CHAT 与公网入口都在同一台、且该 VM 已有公网 IP，技术上无需内网穿透。仍要展示 tunnel 时，可以让 frpc 连接本机 frps，但会增加一次转发，主要用于演示，不建议作为生产必需链路。
+如果 AnswerMesh 与公网入口都在同一台、且该 VM 已有公网 IP，技术上无需内网穿透。仍要展示 tunnel 时，可以让 frpc 连接本机 frps，但会增加一次转发，主要用于演示，不建议作为生产必需链路。
 
 单机演示时：
 
-- ECHO-CHAT 监听 `127.0.0.1:7080`；
+- AnswerMesh 监听 `127.0.0.1:7080`；
 - frpc 的 `serverAddr` 可使用 Docker 服务名 `frps`，或宿主机网关；
 - Nginx、frps、frpc 放入同一 Compose 网络；
 - 生产文档和网络图仍按逻辑上的“入口节点/应用节点”区分。
@@ -115,7 +115,7 @@ tunnel 源码生成的 FRP YAML 主要字段如下：
 
 ## 4. 目录与代码改造建议
 
-在 ECHO-CHAT 仓库新增以下内容：
+在 AnswerMesh 仓库新增以下内容：
 
 ```text
 deploy/
@@ -130,7 +130,7 @@ deploy/
 │   ├── tunnel/
 │   │   └── frps.yaml
 │   └── nginx/
-│       └── echo-chat.conf
+│       └── answermesh.conf
 └── scripts/
     ├── deploy-app.sh
     ├── deploy-edge.sh
@@ -174,9 +174,9 @@ dig +short chat.example.com
 | --- | --- | --- |
 | TCP 22 | 管理员固定 IP | SSH 管理 |
 | TCP 80 | `0.0.0.0/0` | HTTP 跳转、ACME 验证 |
-| TCP 443 | `0.0.0.0/0` | ECHO-CHAT HTTPS |
+| TCP 443 | `0.0.0.0/0` | AnswerMesh HTTPS |
 | TCP 39000 | 最好限制为应用 VM 的出口 IP | frpc 到 frps 控制/数据连接 |
-| TCP 7080 | 不开放 | ECHO-CHAT 本地入口 |
+| TCP 7080 | 不开放 | AnswerMesh 本地入口 |
 | TCP 39001 | 不对公网开放 | frps HTTP 虚拟主机端口，仅供本机 Nginx 使用 |
 | TCP 3306/5160/50055/3002/3003/50053/50054/8084 | 不开放 | 内部依赖 |
 
@@ -262,7 +262,7 @@ log:
 `deploy/edge/compose.yaml`：
 
 ```yaml
-name: echo-chat-edge
+name: answermesh-edge
 
 services:
   frps:
@@ -286,7 +286,7 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./nginx/echo-chat.conf:/etc/nginx/conf.d/echo-chat.conf:ro
+      - ./nginx/answermesh.conf:/etc/nginx/conf.d/answermesh.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro
     depends_on:
@@ -298,7 +298,7 @@ services:
 启动 frps：
 
 ```bash
-cd /opt/echo-chat-edge
+cd /opt/answermesh-edge
 docker compose config
 docker compose up -d frps
 docker compose ps
@@ -312,13 +312,13 @@ ss -lntp | grep -E '39000|39001|7500'
 - `127.0.0.1:39001`、`127.0.0.1:7500` 可见；
 - frps 日志没有 YAML 字段错误或 token 初始化错误。
 
-## 5.4 应用 VM：部署 ECHO-CHAT
+## 5.4 应用 VM：部署 AnswerMesh
 
 克隆并初始化子模块：
 
 ```bash
-git clone https://github.com/robotlover-1/ECHO-CHAT.git
-cd ECHO-CHAT
+git clone https://github.com/robotlover-1/Answermesh.git
+cd AnswerMesh
 git submodule update --init --recursive
 ```
 
@@ -328,8 +328,8 @@ git submodule update --init --recursive
 
 ```sql
 CREATE DATABASE ai_chat CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'echo_chat'@'%' IDENTIFIED BY '<STRONG_PASSWORD>';
-GRANT ALL PRIVILEGES ON ai_chat.* TO 'echo_chat'@'%';
+CREATE USER 'answermesh'@'%' IDENTIFIED BY '<STRONG_PASSWORD>';
+GRANT ALL PRIVILEGES ON ai_chat.* TO 'answermesh'@'%';
 FLUSH PRIVILEGES;
 ```
 
@@ -337,14 +337,14 @@ FLUSH PRIVILEGES;
 
 ```yaml
 mysql:
-  dsn: "echo_chat:<STRONG_PASSWORD>@tcp(host.docker.internal:3306)/ai_chat?collation=utf8mb4_unicode_ci&charset=utf8mb4&parseTime=true"
+  dsn: "answermesh:<STRONG_PASSWORD>@tcp(host.docker.internal:3306)/ai_chat?collation=utf8mb4_unicode_ci&charset=utf8mb4&parseTime=true"
 ```
 
 更好的长期方式是在 Compose 中加入 MySQL，并使用 Docker Secret 或只读配置文件注入凭据。
 
 ### 5.4.2 仅在本机暴露 7080
 
-把 ECHO-CHAT `docker/compose.yaml` 中：
+把 AnswerMesh `docker/compose.yaml` 中：
 
 ```yaml
 ports:
@@ -363,9 +363,9 @@ ports:
 ### 5.4.3 启动
 
 ```bash
-cd ECHO-CHAT/docker
+cd AnswerMesh/docker
 export DEEPSEEK_API_KEY='<YOUR_KEY>'
-docker compose config >/tmp/echo-chat-compose.rendered.yaml
+docker compose config >/tmp/answermesh-compose.rendered.yaml
 docker compose build
 docker compose up -d
 docker compose ps
@@ -411,7 +411,7 @@ log:
   maxDays: 7
 
 proxies:
-  - name: echo-chat-web
+  - name: answermesh-web
     type: http
     localIP: 127.0.0.1
     localPort: 7080
@@ -434,7 +434,7 @@ services:
       - ai-chat-backend
 ```
 
-这里采用 `network_mode: host`，因此 `localIP: 127.0.0.1` 能访问应用 VM 宿主机映射的 `7080`。如果 frpc 加入 ECHO-CHAT Compose 默认网络，则改成：
+这里采用 `network_mode: host`，因此 `localIP: 127.0.0.1` 能访问应用 VM 宿主机映射的 `7080`。如果 frpc 加入 AnswerMesh Compose 默认网络，则改成：
 
 ```yaml
 localIP: ai-chat-backend
@@ -450,11 +450,11 @@ docker compose up -d frpc
 docker compose logs --tail=100 frpc
 ```
 
-期望日志包含成功登录和 `echo-chat-web` proxy 启动成功。
+期望日志包含成功登录和 `answermesh-web` proxy 启动成功。
 
 ## 5.6 公网入口 VM：配置 Nginx
 
-Nginx 不能直接使用 tunnel 项目中当前的简化模板。该模板只有 `proxy_pass`，没有流式响应、真实客户端 IP、超时、TLS 和安全响应头配置。ECHO-CHAT 的聊天接口会长时间流式输出，必须关闭缓冲。
+Nginx 不能直接使用 tunnel 项目中当前的简化模板。该模板只有 `proxy_pass`，没有流式响应、真实客户端 IP、超时、TLS 和安全响应头配置。AnswerMesh 的聊天接口会长时间流式输出，必须关闭缓冲。
 
 先用 HTTP 配置申请证书：
 
@@ -474,10 +474,10 @@ server {
 }
 ```
 
-获取证书后使用完整配置 `deploy/edge/nginx/echo-chat.conf`：
+获取证书后使用完整配置 `deploy/edge/nginx/answermesh.conf`：
 
 ```nginx
-limit_req_zone $binary_remote_addr zone=echo_api:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=answermesh_api:10m rate=10r/s;
 
 server {
     listen 80;
@@ -512,7 +512,7 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
 
     location /api/ {
-        limit_req zone=echo_api burst=30 nodelay;
+        limit_req zone=answermesh_api burst=30 nodelay;
 
         # 必须把原始 Host 传给 frps，frps 依赖 Host 选择 customDomains。
         proxy_set_header Host $host;
@@ -523,7 +523,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Connection "";
 
-        # ECHO-CHAT 为流式响应，禁止缓存和代理缓冲。
+        # AnswerMesh 为流式响应，禁止缓存和代理缓冲。
         proxy_buffering off;
         proxy_cache off;
         gzip off;
@@ -580,18 +580,18 @@ sudo certbot certonly --webroot \
 sudo certbot renew --dry-run
 ```
 
-可在 `/etc/letsencrypt/renewal-hooks/deploy/reload-echo-nginx.sh` 中调用：
+可在 `/etc/letsencrypt/renewal-hooks/deploy/reload-answermesh-nginx.sh` 中调用：
 
 ```bash
 #!/usr/bin/env bash
-docker compose -f /opt/echo-chat-edge/compose.yaml exec -T nginx nginx -s reload
+docker compose -f /opt/answermesh-edge/compose.yaml exec -T nginx nginx -s reload
 ```
 
 ---
 
-## 6. ECHO-CHAT 与 tunnel 的关键配置映射
+## 6. AnswerMesh 与 tunnel 的关键配置映射
 
-| ECHO-CHAT 项 | tunnel/frpc 项 | 公网入口项 | 说明 |
+| AnswerMesh 项 | tunnel/frpc 项 | 公网入口项 | 说明 |
 | --- | --- | --- | --- |
 | `ai-chat-backend:7080` | `localIP/localPort` | Nginx → frps `39001` | 唯一公网业务入口 |
 | 前端 `/api` | 不改写 | 保留 URI 原样 | 前端生产配置已使用 `/api` |
@@ -605,7 +605,7 @@ docker compose -f /opt/echo-chat-edge/compose.yaml exec -T nginx nginx -s reload
 
 ## 7. 第二阶段：保留 tunnel Web 管理平台的完整接入
 
-当目标升级为“通过 tunnel 页面新增 ECHO-CHAT 应用，自动创建 frps、域名和网关”时，再部署完整控制面。
+当目标升级为“通过 tunnel 页面新增 AnswerMesh 应用，自动创建 frps、域名和网关”时，再部署完整控制面。
 
 ### 7.1 必要组件
 
@@ -678,7 +678,7 @@ nginxGateway:
   namespace: tunnel
 ```
 
-### 7.3 创建 ECHO-CHAT 应用
+### 7.3 创建 AnswerMesh 应用
 
 tunnel API 接收表单参数：
 
@@ -686,7 +686,7 @@ tunnel API 接收表单参数：
 curl -X POST 'https://tunnel-admin.example.com/api/v1/app' \
   -H 'Authorization: Bearer <USER_ACCESS_TOKEN>' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode 'name=echo-chat' \
+  --data-urlencode 'name=answermesh' \
   --data-urlencode 'type=http' \
   --data-urlencode 'local_ip=127.0.0.1' \
   --data-urlencode 'local_port=7080'
@@ -784,7 +784,7 @@ server {
 
 不要直接从公网页面开始排查，应按下面顺序逐层验证：
 
-1. 应用 VM 本机访问 ECHO-CHAT；
+1. 应用 VM 本机访问 AnswerMesh；
 2. frpc 登录 frps；
 3. 公网入口本机通过 Host 访问 frps vhost；
 4. Nginx HTTP；
@@ -858,7 +858,7 @@ curl -N 'https://chat.example.com/api/chat-process' \
 
 - Nginx：状态码、请求量、P95/P99 延迟、上游响应时间、499/502/504；
 - frps/frpc：在线状态、重连次数、连接数、流量；
-- ECHO-CHAT：健康状态、请求量、流式首包时间、完整响应时间、上游模型错误率；
+- AnswerMesh：健康状态、请求量、流式首包时间、完整响应时间、上游模型错误率；
 - 主机：CPU、内存、磁盘、网络、容器重启次数；
 - MySQL：连接数、慢查询、磁盘和备份状态。
 
@@ -897,7 +897,7 @@ curl -N 'https://chat.example.com/api/chat-process' \
 
 ### 11.2 回滚
 
-- 保留上一版 ECHO-CHAT 镜像 digest 和配置；
+- 保留上一版 AnswerMesh 镜像 digest 和配置；
 - tunnel 配置每次修改前复制带时间戳的备份；
 - Nginx 配置先 `nginx -t`，失败不得 reload；
 - 数据库结构变更必须提供向下兼容窗口和回滚脚本；
@@ -920,7 +920,7 @@ docker compose up -d
 
 - [ ] 轮换源码中出现过的所有凭据；
 - [ ] 确认公网域名和固定 IP；
-- [ ] ECHO-CHAT `7080` 仅绑定 `127.0.0.1`；
+- [ ] AnswerMesh `7080` 仅绑定 `127.0.0.1`；
 - [ ] 公网 frps 使用随机 token；
 - [ ] 部署 Nginx 与 HTTPS；
 - [ ] Nginx 针对聊天接口关闭缓冲；
@@ -943,7 +943,7 @@ docker compose up -d
 - [ ] 部署 Kubernetes、MySQL、Redis、用户中心；
 - [ ] 修复 tunnel 源码问题；
 - [ ] 使用通配 DNS/证书；
-- [ ] 将 ECHO-CHAT 注册为 HTTP 应用；
+- [ ] 将 AnswerMesh 注册为 HTTP 应用；
 - [ ] 自动下发 frpc 配置或接入安全配置分发；
 - [ ] 增加租户隔离、配额、审计、回收和幂等发布。
 
@@ -970,8 +970,8 @@ docker compose up -d
 
 ## 14. 方案边界
 
-- 本方案以用户提供的 `11.3-tunnel-master.zip` 为 tunnel 实现依据；GitHub 当前 ECHO-CHAT 根目录未发现 `sources/` 目录。
-- `zrpc-main.zip` 不参与公网穿透配置；ECHO-CHAT 当前仓库已经包含 zrpc 迁移相关实现和文档，公网只代理 HTTP 入口。
+- 本方案以用户提供的 `11.3-tunnel-master.zip` 为 tunnel 实现依据；GitHub 当前 AnswerMesh 根目录未发现 `sources/` 目录。
+- `zrpc-main.zip` 不参与公网穿透配置；AnswerMesh 当前仓库已经包含 zrpc 迁移相关实现和文档，公网只代理 HTTP 入口。
 - 文档中的域名、公网 IP、token、密码均为占位符，部署时必须替换。
 - FRP 镜像的具体 ENTRYPOINT 需要在目标 VM 上通过 `docker image inspect` 最终确认。
 - 如果目标 VM 本身已有公网 IP 且无需穿透，生产环境可直接使用 Nginx → `127.0.0.1:7080`，tunnel 仅保留为教学或多网络环境演示。

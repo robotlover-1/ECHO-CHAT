@@ -5,7 +5,7 @@
 
 ## 1. 目标与前置决策
 
-- 目标：用自研 **C zrpc v2（协议加固）+ NtyCo（server 协程）+ cgo bridge** 替换 ECHO-CHAT 4 条 gRPC 调用，
+- 目标：用自研 **C zrpc v2（协议加固）+ NtyCo（server 协程）+ cgo bridge** 替换 AnswerMesh 4 条 gRPC 调用，
   业务逻辑零改动，展示完整跨语言改造链路。
 - 前置授权（2026-09-04 用户确认）：zrpc 教学源码与 NtyCo 均可使用（后者已在 kvstore 使用）；
   但因原 zrpc 无 LICENSE，**只借鉴思想、代码从零编写**（`third_party/zrpc/`，含 LICENSE-NOTICE）。

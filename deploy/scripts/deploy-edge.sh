@@ -9,9 +9,9 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 EDGE_DIR="${REPO_ROOT}/deploy/edge"
 EDGE_ENV="${EDGE_DIR}/.env"
-NGINX_CONF="${EDGE_DIR}/nginx/echo-chat.conf"
-BOOT_TMPL="${EDGE_DIR}/nginx/echo-chat.bootstrap.conf.envsubst"
-FULL_TMPL="${EDGE_DIR}/nginx/echo-chat.conf.envsubst"
+NGINX_CONF="${EDGE_DIR}/nginx/answermesh.conf"
+BOOT_TMPL="${EDGE_DIR}/nginx/answermesh.bootstrap.conf.envsubst"
+FULL_TMPL="${EDGE_DIR}/nginx/answermesh.conf.envsubst"
 FRPS_YAML="${EDGE_DIR}/tunnel/frps.yaml"
 
 [[ $EUID -eq 0 ]] || die "deploy-edge 需要 root（写 /etc/letsencrypt 与 nginx reload）"
@@ -40,7 +40,7 @@ FULLCHAIN="${CERT_DIR}/fullchain.pem"
 render_full() {  # 全量 conf → nginx conf 路径（先在暂存目录校验候选，再落盘）
   local stage cand
   stage="$(mktemp -d "${NGINX_CONF}.stage.XXXXXX")"
-  cand="${stage}/echo-chat.conf"   # 镜像 conf.d 只 include *.conf
+  cand="${stage}/answermesh.conf"   # 镜像 conf.d 只 include *.conf
   trap 'rm -rf "${stage}" "${NGINX_CONF}.candidate"*' RETURN
   umask 077
   envsubst '${PUBLIC_DOMAIN} ${FRP_VHOST_HTTP_PORT}' < "${FULL_TMPL}" > "${cand}"
@@ -182,13 +182,13 @@ info "云端自检: TLS/Nginx(/edge-healthz)..."
 curl -fsS --max-time 15 "https://${PUBLIC_DOMAIN}/edge-healthz" >/dev/null \
   || die "公网 DNS/TLS/Nginx 自检失败(/edge-healthz)——查 80/443 安全组与 nginx 日志"
 
-info "云端自检: ECHO-CHAT 业务链路(/api/health)..."
+info "云端自检: AnswerMesh 业务链路(/api/health)..."
 code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://${PUBLIC_DOMAIN}/api/health" 2>/dev/null)" || code=000
 case "${code}" in
-  200)            info "ECHO-CHAT 链路已连通，建议再跑 smoke-test.sh edge/e2e" ;;
-  502|503|504)    info "edge 正常(HTTP ${code})；本地 frpc/ECHO-CHAT 未就绪——frpc 上线后再跑 smoke-test.sh edge" ;;
+  200)            info "AnswerMesh 链路已连通，建议再跑 smoke-test.sh edge/e2e" ;;
+  502|503|504)    info "edge 正常(HTTP ${code})；本地 frpc/AnswerMesh 未就绪——frpc 上线后再跑 smoke-test.sh edge" ;;
   000)            die "HTTPS 连接失败(000)";;
   *)              die "HTTPS 返回非预期状态 ${code}，检查 Nginx 路由/后端" ;;
 esac
 
-info "续期 deploy hook 建议写入 /etc/letsencrypt/renewal-hooks/deploy/reload-echo-nginx.sh（见 deploy/README.md）"
+info "续期 deploy hook 建议写入 /etc/letsencrypt/renewal-hooks/deploy/reload-answermesh-nginx.sh（见 deploy/README.md）"

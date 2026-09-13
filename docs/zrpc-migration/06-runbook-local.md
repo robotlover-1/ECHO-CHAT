@@ -1,4 +1,4 @@
-# zrpc 迁移 · 本地真栈拉起 Runbook（tmp/t1/ECHO-CHAT, 分支 zrpc-migration）
+# zrpc 迁移 · 本地真栈拉起 Runbook（tmp/t1/AnswerMesh, 分支 zrpc-migration）
 
 日期：2026-09-04。目的：起一套**离线可用**的栈，用来做 gRPC vs zrpc 双栈对比与收尾。
 前端 UI 不需要（用 curl 打 backend 即可）。
@@ -17,10 +17,10 @@
 | semantic | 3003 | 可选（缺失→优雅 miss，聊天不受影响） |
 | openai-api-proxy | 8084 | 不需要（离线直接用 mock） |
 
-## 0) 一次准备（在仓库根 `.../tmp/t1/ECHO-CHAT`）
+## 0) 一次准备（在仓库根 `.../tmp/t1/AnswerMesh`）
 
 ```bash
-cd .../tmp/t1/ECHO-CHAT
+cd .../tmp/t1/AnswerMesh
 # 建库/表（幂等失败没关系，已存在就跳过）
 mysql -h127.0.0.1 -uroot -p123456 < docs/sql/create_db.sql
 # 编译 C lib + 三个服务二进制（root Makefile 已接好）

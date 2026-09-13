@@ -1,6 +1,6 @@
 # 公网入口节点：frps + nginx。运行目录=deploy/edge（compose 自动读同目录 .env）。
 # 7500 dashboard 已关闭；39001/7500 均不对外。
-name: echo-chat-edge
+name: answermesh-edge
 
 services:
   frps:
@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./nginx/echo-chat.conf:/etc/nginx/conf.d/echo-chat.conf:ro
+      - ./nginx/answermesh.conf:/etc/nginx/conf.d/answermesh.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro
     logging:

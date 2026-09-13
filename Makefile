@@ -1,4 +1,4 @@
-# ECHO-CHAT 根 Makefile（zrpc 迁移：Task 8）
+# AnswerMesh 根 Makefile（zrpc 迁移：Task 8）
 #   make            # kvstore（保留原默认）
 #   make zrpc       # 构建 third_party/zrpc/libzrpc.a（含 NtyCo）
 #   make zrpc-test  # C 层测试（含 NtyCo 的普通套件）

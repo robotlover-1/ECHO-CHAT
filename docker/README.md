@@ -1,4 +1,4 @@
-# ECHO-CHAT Docker 全栈（docker compose）
+# AnswerMesh Docker 全栈（docker compose）
 
 > **未在本仓库开发机验证**（该机无 docker daemon 权限）。请在任意有 Docker 的主机跑，首次按报错微调。这套是**从源码构建**的全栈 Compose，与 `ai-chat-stack/`（已发布镜像的 Swarm 部署）是两条线。
 

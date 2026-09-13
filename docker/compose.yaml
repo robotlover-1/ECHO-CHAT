@@ -1,4 +1,4 @@
-# ECHO-CHAT 全栈 Docker Compose（build-from-source）。
+# AnswerMesh 全栈 Docker Compose（build-from-source）。
 # 用法:  cd docker && docker compose up -d --build      （首次构建需联网: go/pnpm/模型/镜像源）
 # 注意:
 #  - MySQL 假定已可在宿主机 :3306 访问(compose 内用 host.docker.internal 连)，库 ai_chat 由 backend 启动自建 users 表；
@@ -10,7 +10,7 @@
 #  - 安全：7080 仅绑宿主机回环(127.0.0.1:7080:7080)，proxy 不暴露宿主端口；
 #    公网入口走 deploy/edge 的 Nginx→frps→frpc→127.0.0.1:7080。
 #  - docker compose 前必须先运行 ../deploy/scripts/render-config.sh app（生成 docker/config/*.yaml）。
-name: echo-chat
+name: answermesh
 
 x-go-common: &go-common
   build:

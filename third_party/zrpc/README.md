@@ -1,11 +1,11 @@
-# zrpc —— ECHO-CHAT 跨语言 RPC（C 实现 + cgo 接入 Go）
+# zrpc —— AnswerMesh 跨语言 RPC（C 实现 + cgo 接入 Go）
 
 对原 zrpc（C 教学骨架，见 `reference/zrpc-original`）协议加固后形成的 **zrpc v2**，
-用于替换 ECHO-CHAT 中的三条 gRPC 链路。最终以静态库 `libzrpc.a` + cgo bridge
+用于替换 AnswerMesh 中的三条 gRPC 链路。最终以静态库 `libzrpc.a` + cgo bridge
 （`zrpc-go/`）接入 Go 业务。
 
 > 来源与许可证见 [LICENSE-NOTICE.md](LICENSE-NOTICE.md)；完整方案见
-> `docs/superpowers/plans/2026-09-04-echo-chat-c-zrpc-cross-language-migration-plan.md`。
+> `docs/superpowers/plans/2026-09-04-answermesh-c-zrpc-cross-language-migration-plan.md`。
 > 当前进度：Task 0/1/2 完成（协议/帧/IO、C unary client + NtyCo server）；Task 3 完成
 > （`zrpc-go/` cgo bridge）；Task 4 完成（keywords-filter 双栈 + contract + chat-service
 > `transport=grpc|zrpc` 切换，parity 黄金一致证据）。详见 `docs/zrpc-migration/`。

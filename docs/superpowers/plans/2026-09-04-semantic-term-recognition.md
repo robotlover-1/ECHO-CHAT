@@ -1,4 +1,4 @@
-# ECHO-CHAT 语义检索 Phase 1.5 实施计划：术语实体识别与受控概念扩展
+# AnswerMesh 语义检索 Phase 1.5 实施计划：术语实体识别与受控概念扩展
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

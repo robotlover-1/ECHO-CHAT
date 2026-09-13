@@ -4,7 +4,7 @@
 
 **Goal:** 把 ai-chat 与 kvstore 拆成两个独立 git 仓库（kvstore 作 ai-chat 的 submodule），并完成：删除短信验证码改免密自动登录、接入公有大模型（DeepSeek，key 走环境变量）、Q-A 以明文字符串 KV 存储（key=原始问题、value=原始回答、不做 hash）、回答来源标注（公有大模型/缓存命中）、网页按会话累计显示 tokens 总消耗与节省。
 
-**Architecture:** 采用"先功能改造、后仓库拆分"的顺序。所有功能改动先在现有 `9.1-kvstore` 仓库中完成并逐任务验证（该环境已装好全部依赖），最后一步把 `kvstore/` 单独拆成 `pocket-kv` 仓库，其余组件构成 `ECHO-CHAT` 仓库并在其中以 submodule 引用 kvstore。存储层用双结构：明文 Q-A 存 array 引擎（`SET qa:<问题> <回答>`），向量索引存 hash 引擎（`HSET semcache:<问题> <[dim][vec]>`），VSEARCH 仍只扫 hash 引擎。
+**Architecture:** 采用"先功能改造、后仓库拆分"的顺序。所有功能改动先在现有 `9.1-kvstore` 仓库中完成并逐任务验证（该环境已装好全部依赖），最后一步把 `kvstore/` 单独拆成 `pocket-kv` 仓库，其余组件构成 `AnswerMesh` 仓库并在其中以 submodule 引用 kvstore。存储层用双结构：明文 Q-A 存 array 引擎（`SET qa:<问题> <回答>`），向量索引存 hash 引擎（`HSET semcache:<问题> <[dim][vec]>`），VSEARCH 仍只扫 hash 引擎。
 
 **Tech Stack:** C（kvstore，RESP 协议）、Go 1.19/1.20（gin/gRPC/go-openai/redis）、Python nuxt + tiktoken + jieba（tokenizer 嵌入/重排）、Vue3 + naive-ui + pnpm、git submodule。
 
@@ -15,7 +15,7 @@
 - 大模型：DeepSeek，`base_url = https://api.deepseek.com/v1`，模型 `deepseek-v4-flash`，key 一律从环境变量 `DEEPSEEK_API_KEY` 读取，**任何密钥不得写入 git**。
 - 回答来源字段 `source` 取值仅 `"llm"` 或 `"cache"`；缓存命中不扣额度，LLM 回答扣额度。
 - tokens 统计按当前会话在前端累计，不使用全局聚合。
-- 拆分目标仓库：`git@github.com:robotlover-1/pocket-kv.git` 与 `git@github.com:robotlover-1/ECHO-CHAT.git`，均为全新初始提交；现有 `9.1-kvstore` 保持不变。
+- 拆分目标仓库：`git@github.com:robotlover-1/pocket-kv.git` 与 `git@github.com:robotlover-1/Answermesh.git`，均为全新初始提交；现有 `9.1-kvstore` 保持不变。
 - 每任务结束必须提交；改动尽量小、可回滚；不引入新依赖；不破坏现有 kvstore 命令兼容性（SET/GET/HSET/HGET/VSEARCH 语义不变，只改 semcache record 格式）。
 
 ---
@@ -1028,14 +1028,14 @@ Expected: 推送成功。
 
 ---
 
-### Task 11：创建 ECHO-CHAT 仓库（kvstore 作 submodule）并推送
+### Task 11：创建 AnswerMesh 仓库（kvstore 作 submodule）并推送
 
 **Files:**
 - Create: `/home/pp/Desktop/ls_study/proj/ai-chat`（新 git 仓库）
 
 **Interfaces:**
 - Consumes: Task 10 的 `pocket-kv` 仓库
-- Produces: `git@github.com:robotlover-1/ECHO-CHAT.git`，含全部 ai-chat 组件 + `kvstore` submodule。
+- Produces: `git@github.com:robotlover-1/Answermesh.git`，含全部 ai-chat 组件 + `kvstore` submodule。
 
 - [ ] **Step 1: 准备目录并复制 ai-chat 组件**
 
@@ -1069,11 +1069,11 @@ cd /home/pp/Desktop/ls_study/proj/ai-chat
 git submodule add git@github.com:robotlover-1/pocket-kv.git kvstore
 git add -A
 git commit -m "init: ai-chat 独立仓库（kvstore 为 submodule）"
-git remote add origin git@github.com:robotlover-1/ECHO-CHAT.git
+git remote add origin git@github.com:robotlover-1/Answermesh.git
 ```
 Expected: `kvstore/` 为 submodule gitlink，`.gitmodules` 指向 `pocket-kv`。
 
-- [ ] **Step 3: 推送（github 空仓库已由用户创建：robotlover-1/ECHO-CHAT）**
+- [ ] **Step 3: 推送（github 空仓库已由用户创建：robotlover-1/Answermesh）**
 
 Run: `cd /home/pp/Desktop/ls_study/proj/ai-chat && git push -u origin main`
 Expected: 推送成功。
@@ -1092,7 +1092,7 @@ Expected: 推送成功。
 
 Run:
 ```bash
-rm -rf /tmp/ai-chat-clone && git clone --recurse-submodules git@github.com:robotlover-1/ECHO-CHAT.git /tmp/ai-chat-clone
+rm -rf /tmp/ai-chat-clone && git clone --recurse-submodules git@github.com:robotlover-1/Answermesh.git /tmp/ai-chat-clone
 cd /tmp/ai-chat-clone
 git submodule update --init --recursive   # 拉下 kvstore（含 NtyCo）
 make kvstore                              # 从 submodule 编译 kvstore

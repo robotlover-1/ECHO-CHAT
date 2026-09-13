@@ -1,15 +1,15 @@
-# ECHO-CHAT 语义检索 · 三类设计领域本体概念扩展（电气 / 机械 / 嵌入式软件）设计文档
+# AnswerMesh 语义检索 · 三类设计领域本体概念扩展（电气 / 机械 / 嵌入式软件）设计文档
 
 - 日期：2026-09-06
 - 状态：已批准（brainstorming 四节逐节确认：组织方案=方案 A；概念清单=起手草案；工程/测试=§2/§3；边界与增量=§4）
-- 位置：ECHO-CHAT `semantic/`（`ontology/concepts.json` 扩容 + validator 轻校验 + eval 验收集 + README）
+- 位置：AnswerMesh `semantic/`（`ontology/concepts.json` 扩容 + validator 轻校验 + eval 验收集 + README）
 - 关联：`docs/superpowers/specs/2026-09-04-semantic-term-recognition-design.md`（术语实体化机制，本设计复用其识别口径）、`2026-09-04-semantic-phase2-3-e5-hybrid-design.md`（e5 向量 + decision 纯规则 + 指纹）
 
 > **定位**：本阶段是**语义本体扩容**，不改识别/判定机制。只为制造公司三类工程师（电气设计、机械设计、嵌入式软件）的高频问句补 `subject` 本体概念与别名，让 `/embed` 能把它们解析出 subject_id，从而进入既有缓存命中（VSEARCH + decision + 指纹）流程。**跨领域是否共享缓存答案仍只由 subject_id 决定**（同 id 即共享，异 id 即拒）；新增的 `group` 标注**永不进运行时判定**，仅作维护归组/测试归类。
 
 ## 背景与目标
 
-ECHO-CHAT 是制造业公司内部的问答助手：电气/机械设计工程师与嵌入式软件工程师遇到问题问 AI，很多人问题相似 → 语义缓存把"改写等价"的问句命中共享，省 token 且更快。
+AnswerMesh 是制造业公司内部的问答助手：电气/机械设计工程师与嵌入式软件工程师遇到问题问 AI，很多人问题相似 → 语义缓存把"改写等价"的问句命中共享，省 token 且更快。
 
 现状本体 40 个概念全部是 CS（红黑树/线程池/std::vector…），三类工程问句解析不出 subject_id → 无法复用缓存。目标：**先配置三类领域最常用的本体概念**，让高频同类问句可被识别并安全去重；内容后续按问答日志增量扩展。
 

@@ -1,5 +1,5 @@
-# frpc 独立栈（应用节点）。ECHO-CHAT 主栈见 docker/compose.yaml（deploy-app.sh 串起两者）。
-name: echo-chat-frpc
+# frpc 独立栈（应用节点）。AnswerMesh 主栈见 docker/compose.yaml（deploy-app.sh 串起两者）。
+name: answermesh-frpc
 
 services:
   frpc:

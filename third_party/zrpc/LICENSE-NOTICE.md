@@ -23,7 +23,7 @@
 
 原始实现特征（供对照，非本项目约束）：
 单次 `send/recv` 假设整帧收齐、`CRC32(4B)+length(2B)` 帧头、固定 caller ID、注册式方法表、
-基于 NtyCo 协程调度。zrpc v2 已针对这些特征逐一加固（`docs/superpowers/plans/2026-09-04-echo-chat-c-zrpc-cross-language-migration-plan.md` §4-§5）。
+基于 NtyCo 协程调度。zrpc v2 已针对这些特征逐一加固（`docs/superpowers/plans/2026-09-04-answermesh-c-zrpc-cross-language-migration-plan.md` §4-§5）。
 
 ## 3. cJSON
 
@@ -48,5 +48,5 @@
 
 ## 5. 授权记录
 
-2026-09-04 项目方口头确认：zrpc 与 NtyCo 均可用于本项目；NtyCo 已在 ECHO-CHAT 仓库的 kvstore
+2026-09-04 项目方口头确认：zrpc 与 NtyCo 均可用于本项目；NtyCo 已在 AnswerMesh 仓库的 kvstore
 子模块服务中实际使用。本说明记录该授权以完成实施计划 Task 0 的"授权明确"退出条件。
