@@ -5,16 +5,25 @@
 # 环境变量可覆盖:
 #   MODEL_URL   强制用指定 URL（跳过镜像列表）
 #   MODEL_TARGET(默认 $BASE/semantic/models/e5s-v1)
-# 默认按序尝试：GitHub Release 直连 → 常见加速镜像（ghfast.top / gh-proxy.com），
-# 失败自动换下一个、带断点续传与重试（部分网络直连 GitHub release 资产会被重置）。
+# 默认按序尝试：加速镜像（gh-proxy.com → ghfast.top）→ GitHub Release 直连。
+#
+# 为什么镜像优先：直连 GitHub release 资产在国内常年只有几 KB/s（实测 4 KB/s，78MB
+# 要 5 小时以上），而镜像可达 3.7 MB/s（约 20 秒）。镜像不通时会**快速失败**，代价
+# 远小于把时间耗在一条慢连接上。
+#
+# 低速放弃：--speed-limit/--speed-time 让任何一条连接只要持续 20 秒低于 100 KB/s 就
+# 主动断开换下一个。注意 --retry 只处理"失败"，不处理"慢"——没有这个的话，一条
+# 4 KB/s 的连接会被一路挂到最后（这正是此前踩的坑）。
 set -euo pipefail
 
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIRECT="https://github.com/robotlover-1/Answermesh/releases/download/models-e5s-v1/multilingual-e5-small-onnx-int8.tar.gz"
 MIRRORS=(
-  "https://ghfast.top/$DIRECT"
   "https://gh-proxy.com/$DIRECT"
+  "https://ghfast.top/$DIRECT"
 )
+SPEED_LIMIT="${MODEL_SPEED_LIMIT:-102400}"   # 100 KB/s
+SPEED_TIME="${MODEL_SPEED_TIME:-20}"         # 持续 20s 低于阈值就放弃
 TARGET="${MODEL_TARGET:-$BASE/semantic/models/e5s-v1}"
 TARBALL="$(mktemp /tmp/e5s-model-XXXXXX.tar.gz)"
 trap 'rm -f "$TARBALL"' EXIT
@@ -23,20 +32,24 @@ mkdir -p "$TARGET"
 if [ -n "${MODEL_URL:-}" ]; then
   URLS=("$MODEL_URL")
 else
-  URLS=("$DIRECT" "${MIRRORS[@]}")
+  URLS=("${MIRRORS[@]}" "$DIRECT")
 fi
 
-echo "== 下载模型 =="
+echo "== 下载模型（约 78MB；低于 ${SPEED_LIMIT} B/s 持续 ${SPEED_TIME}s 会自动换源）=="
 ok=0
 for u in "${URLS[@]}"; do
   echo "  try: $u"
   rm -f "$TARBALL"
-  if curl -fL --retry 5 --retry-delay 2 --connect-timeout 15 -C - -o "$TARBALL" "$u"; then
+  # 每次换源都从头下：不同镜像返回的字节流未必可续传，-C - 跨源续传有拼坏文件的风险。
+  if curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 \
+          --speed-limit "$SPEED_LIMIT" --speed-time "$SPEED_TIME" \
+          --progress-bar -o "$TARBALL" "$u"; then
     ok=1; break
   fi
+  echo "    ↳ 跳过（不可达或速度不达标）"
 done
 if [ $ok -ne 1 ] || [ ! -s "$TARBALL" ]; then
-  echo "✘ 下载失败（以上 URL 均不可达）。可设 MODEL_URL 指向可达镜像/内网，或手动拷贝开发机 semantic/models/e5s-v1/。" >&2
+  echo "✘ 下载失败（以上 URL 均不可达/过慢）。可设 MODEL_URL 指向可达镜像/内网，或手动拷贝开发机 semantic/models/e5s-v1/。" >&2
   exit 1
 fi
 echo "== 解压到 $TARGET =="
