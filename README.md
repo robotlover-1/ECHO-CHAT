@@ -83,16 +83,25 @@ bash deploy/scripts/fetch_frpc.sh
 三样齐备后，**二选一**把配置给 `start.sh`：
 
 ```bash
-# A) 环境变量（最省事，不用建文件）——`FRP_AUTH_TOKEN` 必须与云端 .env 里的一致
-PUBLIC_DOMAIN=example.com \
-FRP_SERVER_ADDR=1.2.3.4 \
-FRP_AUTH_TOKEN=<与云端一致的 token> \
-./start.sh
+# A) 环境变量：写成一行，变量之间用空格隔开（最不容易出错）
+PUBLIC_DOMAIN=example.com FRP_SERVER_ADDR=1.2.3.4 FRP_AUTH_TOKEN=<与云端一致的 token> ./start.sh
 
-# B) 配置文件（会自动渲染 deploy/app/tunnel/frpc.yaml）
+# B) 配置文件（会自动渲染 deploy/app/tunnel/frpc.yaml）——正式部署建议用这个
 cp deploy/app/.env.example deploy/app/.env   # 填 PUBLIC_DOMAIN / FRP_SERVER_ADDR / FRP_AUTH_TOKEN
 ./start.sh
 ```
+
+> **写多行时注意**：行尾续行符 `\` **前面必须留一个空格**。
+> `FRP_AUTH_TOKEN=abc\` + 换行 + `./start.sh` 会被 bash 拼成 `FRP_AUTH_TOKEN=abc./start.sh`——
+> 整条命令退化成"纯变量赋值"，`start.sh` 根本不会执行，而且**一行输出都没有**（很容易误判成"跑通了但没效果"）。
+> 正确写法：
+> ```bash
+> PUBLIC_DOMAIN=example.com \
+> FRP_SERVER_ADDR=1.2.3.4 \
+> FRP_AUTH_TOKEN=abc \
+> ./start.sh
+> ```
+> 判断有没有真跑起来：有输出 `== 环境/补编译 ==` 和 `[frpc] 渲染配置 ...` 才算。
 
 A 与 B 同时存在时以 **B（`.env` 文件）优先**。也可以让 `start.sh` 顺带把 frpc 也下了：
 
